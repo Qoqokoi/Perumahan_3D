@@ -875,7 +875,7 @@ export default function App() {
                       Publikasikan Unit ke Cloud Firestore
                     </Button>
                   </form>
-                </CardContent>
+                </Card>
               )}
             </div>
           )}
