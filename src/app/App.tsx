@@ -9,7 +9,7 @@ import { PropertyDetail } from './components/PropertyDetail';
 import SalesInvoice from './components/SalesInvoice';
 import {
   Home, Search, FileText, User, LogIn,
-  Video, Users, Building2, Phone, MessageCircle, Mail, MapPin, CheckCircle
+  Video, Users, Building2, Phone, MessageCircle, Mail, MapPin, CheckCircle, ShieldCheck
 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -48,7 +48,15 @@ export interface Transaction {
   paymentMethod: string;
 }
 
-// 6 PROPERTI ASLI AWAL (Asset Folder public/images/)
+export interface CurrentUserType {
+  fullName: string;
+  email: string;
+  phone: string;
+  address: string;
+  role: 'admin' | 'user';
+}
+
+// 6 PROPERTI ASLI AWAL (Folder public/images/)
 const mockProperties: Property[] = [
   {
     id: '1',
@@ -145,7 +153,7 @@ export default function App() {
 
   // Auth & Page State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUserType | null>(null);
   const [currentPage, setCurrentPage] = useState<'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services'>('login');
 
   // Responsive Hook Inline
@@ -217,15 +225,24 @@ export default function App() {
   // 3. PURCHASE & INVOICE HANDLER
   const handleCreateInvoice = async (property: Property, buyerData: any, paymentData: any) => {
     const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+
+    // Pastikan domain email pembeli selalu terisi
+    const finalBuyerEmail = buyerData.email
+      ? (buyerData.email.includes('@') ? buyerData.email.trim() : `${buyerData.email.trim()}@gmail.com`)
+      : (currentUser?.email || 'buyer@gmail.com');
+
     const newTx: any = {
       id: invoiceNumber,
       invoiceNumber: invoiceNumber,
       property,
-      buyer: buyerData,
-      buyerName: buyerData.name || regName,
-      buyerPhone: buyerData.phone || regPhone,
-      buyerEmail: buyerData.email || regEmail,
-      buyerAddress: buyerData.address || regAddress,
+      buyer: {
+        ...buyerData,
+        email: finalBuyerEmail
+      },
+      buyerName: buyerData.name || currentUser?.fullName || 'Pembeli Delons',
+      buyerPhone: buyerData.phone || currentUser?.phone || '081234567890',
+      buyerEmail: finalBuyerEmail,
+      buyerAddress: buyerData.address || currentUser?.address || 'Kawasan Delons Clusters',
       propertyTitle: property.title,
       propertyLocation: property.location,
       propertyPrice: property.price,
@@ -271,7 +288,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* KONDISI: MENU NAVBAR HANYA MUNCUL JIKA TIDAK DI HALAMAN LOGIN */}
+            {/* MENU NAVBAR HANYA MUNCUL JIKA TIDAK DI HALAMAN LOGIN */}
             {currentPage !== 'login' && (
               <>
                 {/* Navigation Menu */}
@@ -297,19 +314,30 @@ export default function App() {
                   </Button>
 
                   {isLoggedIn ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setIsLoggedIn(false);
-                        setCurrentUser(null);
-                        setCurrentPage('login');
-                        alert('Anda telah berhasil Logout.');
-                      }}
-                      className="text-xs text-red-600 border-red-200 hover:bg-red-50"
-                    >
-                      <LogIn className="size-3 mr-1 rotate-180" /> Logout
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {/* USER & ROLE BADGE */}
+                      <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 border rounded-lg text-xs">
+                        <User className="size-3 text-blue-600" />
+                        <span className="font-semibold text-gray-800">{currentUser?.fullName}</span>
+                        <Badge className={`text-[9px] px-1.5 py-0 ${currentUser?.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white'}`}>
+                          {currentUser?.role === 'admin' ? 'ADMIN' : 'PEMBELI'}
+                        </Badge>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setIsLoggedIn(false);
+                          setCurrentUser(null);
+                          setCurrentPage('login');
+                          alert('Anda telah berhasil Logout.');
+                        }}
+                        className="text-xs text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        <LogIn className="size-3 mr-1 rotate-180" /> Logout
+                      </Button>
+                    </div>
                   ) : (
                     <Button
                       size="sm"
@@ -489,11 +517,20 @@ export default function App() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-medium">Email / Username</label>
-                    <Input placeholder="Masukkan email atau username..." value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                    <Input
+                      placeholder="Masukkan email atau username..."
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-medium">Password</label>
-                    <Input type="password" placeholder="Masukkan password..." value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                    <Input
+                      type="password"
+                      placeholder="Masukkan password..."
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                    />
                   </div>
                   <Button
                     className="w-full bg-blue-600 hover:bg-blue-700"
@@ -502,16 +539,27 @@ export default function App() {
                         alert('Silakan masukkan email dan password terlebih dahulu!');
                         return;
                       }
-                      const userObj = {
-                        fullName: regName || loginEmail.split('@')[0],
-                        email: loginEmail,
+
+                      const cleanIdentifier = loginEmail.trim().toLowerCase();
+                      const isAdmin = (cleanIdentifier === 'admin') && loginPassword === 'admin123';
+
+                      // Auto format email dengan @gmail.com
+                      const formattedEmail = cleanIdentifier.includes('@')
+                        ? cleanIdentifier
+                        : `${cleanIdentifier}@gmail.com`;
+
+                      const userObj: CurrentUserType = {
+                        fullName: isAdmin ? 'Administrator Delons' : (regName || loginEmail.split('@')[0]),
+                        email: isAdmin ? 'admin@delonclusters.com' : formattedEmail,
                         phone: regPhone || '081234567890',
-                        address: regAddress || 'Jl. Delons No. 12, Jawa Timur'
+                        address: regAddress || 'Kawasan Delons Clusters, Ponorogo',
+                        role: isAdmin ? 'admin' : 'user'
                       };
+
                       setCurrentUser(userObj);
                       setIsLoggedIn(true);
                       setCurrentPage('home');
-                      alert('Login Berhasil! Selamat datang di RumahKu 3D.');
+                      alert(`Login Berhasil! Selamat datang ${isAdmin ? 'Admin' : userObj.fullName}.`);
                     }}
                   >
                     Login
@@ -544,8 +592,12 @@ export default function App() {
                     <Input placeholder="Alamat lengkap..." value={regAddress} onChange={(e) => setRegAddress(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-medium">Email</label>
-                    <Input type="email" placeholder="Email aktif..." value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
+                    <label className="text-xs font-medium">Email / Username</label>
+                    <Input
+                      placeholder="Email atau username..."
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-medium">Password</label>
@@ -558,6 +610,10 @@ export default function App() {
                         alert('Mohon lengkapi nama, email, dan password.');
                         return;
                       }
+
+                      const autoEmail = regEmail.includes('@') ? regEmail.trim() : `${regEmail.trim()}@gmail.com`;
+                      setRegEmail(autoEmail);
+
                       alert('Registrasi Berhasil! Silakan Login.');
                       setCurrentPage('login');
                     }}

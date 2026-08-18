@@ -21,31 +21,48 @@ export function PropertyDetail({
   onClose,
   onPurchase
 }: PropertyDetailProps) {
-  // State Data Pembeli (Auto-fill dari akun login)
+  // Format awal email: jamin selalu mengandung @gmail.com
+  const getInitialEmail = () => {
+    if (!currentUser?.email) return '';
+    const raw = currentUser.email.trim();
+    return raw.includes('@') ? raw : `${raw}@gmail.com`;
+  };
+
+  // State Data Pembeli (Auto-fill sinkron dari akun yang sedang login)
   const [name, setName] = useState(currentUser?.fullName || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');
-  const [email, setEmail] = useState(currentUser?.email || '');
+  const [email, setEmail] = useState(getInitialEmail);
   const [address, setAddress] = useState(currentUser?.address || '');
 
-  // State DP (String agar bisa dihapus total tanpa nyangkut angka 0)
+  // State Nominal Uang Muka (DP) & Metode Bayar
   const [downPayment, setDownPayment] = useState<string>('50000000');
   const [paymentMethod, setPaymentMethod] = useState<string>('Transfer Bank (BCA / Mandiri / BRI)');
 
+  // Sinkronisasi data pembeli jika session currentUser berubah
   useEffect(() => {
     if (currentUser) {
       setName(currentUser.fullName || '');
       setPhone(currentUser.phone || '');
-      setEmail(currentUser.email || '');
       setAddress(currentUser.address || '');
+
+      const rawMail = currentUser.email || '';
+      setEmail(rawMail.includes('@') ? rawMail : `${rawMail}@gmail.com`);
     }
   }, [currentUser]);
+
+  // Auto-append domain @gmail.com saat user selesai mengetik (klik di luar input / onBlur)
+  const handleEmailBlur = () => {
+    const trimmed = email.trim();
+    if (trimmed && !trimmed.includes('@')) {
+      setEmail(`${trimmed}@gmail.com`);
+    }
+  };
 
   // Kalkulasi Pembayaran
   const dpNumber = Number(downPayment) || 0;
   const remainingPayment = Math.max(0, property.price - dpNumber);
 
   const handleDpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Hanya izinkan angka, bisa dihapus sampai benar-benar kosong
     const rawVal = e.target.value.replace(/\D/g, '');
     setDownPayment(rawVal);
   };
@@ -53,7 +70,9 @@ export function PropertyDetail({
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name.trim() || !phone.trim() || !email.trim() || !address.trim()) {
+    const finalEmail = email.trim().includes('@') ? email.trim() : `${email.trim()}@gmail.com`;
+
+    if (!name.trim() || !phone.trim() || !finalEmail || !address.trim()) {
       alert('Semua data identitas pembeli wajib diisi!');
       return;
     }
@@ -70,10 +89,10 @@ export function PropertyDetail({
 
     onPurchase(
       {
-        name,
-        phone,
-        email,
-        address,
+        name: name.trim(),
+        phone: phone.trim(),
+        email: finalEmail,
+        address: address.trim(),
         nik: currentUser?.nik || '3201xxxxxxxxxxxx'
       },
       {
@@ -103,7 +122,7 @@ export function PropertyDetail({
           </button>
         </div>
 
-        {/* Modal Body (Scrollable) */}
+        {/* Modal Body */}
         <div className="p-5 md:p-6 overflow-y-auto space-y-6">
 
           {/* Section 1: Visual & Spesifikasi Properti */}
@@ -115,7 +134,7 @@ export function PropertyDetail({
                   alt={property.title}
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/images/perumahanbanyak.jpeg';
+                    (e.target as HTMLImageElement).src = '/images/rumah-delon.jpeg';
                   }}
                 />
               </div>
@@ -174,13 +193,12 @@ export function PropertyDetail({
           {/* Section 2: Form Pemesanan & Pembayaran */}
           <form onSubmit={handleFormSubmit} className="space-y-5">
 
-            {/* Sub-header Data Pembeli */}
             <div className="flex items-center justify-between bg-blue-50/70 p-3 rounded-xl border border-blue-100">
               <div className="flex items-center gap-2">
                 <UserCheck className="size-5 text-blue-600" />
                 <div>
                   <h5 className="font-bold text-gray-900 text-xs md:text-sm">Identitas Pembeli Terverifikasi</h5>
-                  <p className="text-[10px] text-gray-500">Data otomatis disinkronisasi dari registrasi akun KTP Anda</p>
+                  <p className="text-[10px] text-gray-500">Data otomatis disinkronisasi dari registrasi akun Anda</p>
                 </div>
               </div>
               <Badge variant="outline" className="bg-white text-emerald-700 border-emerald-300 text-[10px] gap-1 font-medium">
@@ -188,7 +206,6 @@ export function PropertyDetail({
               </Badge>
             </div>
 
-            {/* Grid Input Data Pembeli (Auto-Filled) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-700">Nama Lengkap Pemesan</label>
@@ -209,12 +226,13 @@ export function PropertyDetail({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-700">Alamat Email</label>
+                <label className="text-xs font-semibold text-gray-700">Alamat Email (Auto @gmail.com)</label>
                 <Input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="nama@email.com"
+                  onBlur={handleEmailBlur}
+                  placeholder="nama@gmail.com"
                   className="bg-gray-50 text-xs font-medium"
                 />
               </div>
@@ -229,7 +247,6 @@ export function PropertyDetail({
               </div>
             </div>
 
-            {/* Sub-header Data Pembayaran */}
             <div className="flex items-center gap-2 pt-2">
               <CreditCard className="size-4 text-blue-600" />
               <h5 className="font-bold text-gray-900 text-xs md:text-sm">Rincian Skema Pembayaran Unit</h5>
@@ -237,7 +254,6 @@ export function PropertyDetail({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
 
-              {/* Input DP (Fix Bug 0) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-800">
                   Uang Muka (Down Payment - DP)
@@ -258,7 +274,6 @@ export function PropertyDetail({
                 </p>
               </div>
 
-              {/* Pilihan Metode Bayar */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-800">Metode Penyaluran DP</label>
                 <select
@@ -274,7 +289,6 @@ export function PropertyDetail({
                 <p className="text-[11px] text-gray-500">Instruksi rekening akan diterbitkan langsung pada lembar nota.</p>
               </div>
 
-              {/* Ringkasan Finansial */}
               <div className="md:col-span-2 pt-2 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <div>
                   <p className="text-xs text-gray-500">Sisa Pelunasan / Akad KPR:</p>
@@ -289,7 +303,6 @@ export function PropertyDetail({
               </div>
             </div>
 
-            {/* Tombol Aksi */}
             <div className="flex gap-3 pt-2">
               <Button
                 type="button"
