@@ -1,441 +1,276 @@
-import { useState } from 'react';
-import { Property, Transaction } from '../App';
-import { Printer, Plus, Calendar, User, Phone, Mail, MapPin, Home as HomeIcon, ScanLine } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import React, { useState } from 'react';
+import {
+  Building2, Printer, Calendar, User, Phone, Mail,
+  MapPin, CreditCard, ShieldCheck, CheckCircle2, FileText, ArrowLeft
+} from 'lucide-react';
 import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from './ui/dialog';
-import { Label } from './ui/label';
-import { Input } from './ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Separator } from './ui/separator';
-import { KTPScanner } from './KTPScanner';
+import { Badge } from './ui/badge';
 
-interface SalesInvoiceProps {
-  transactions: Transaction[];
-  onCreateInvoice: (property: Property, buyerData: any, paymentData: any) => void;
-  properties: Property[];
-}
-
-export function SalesInvoice({ transactions, onCreateInvoice, properties }: SalesInvoiceProps) {
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(
-    transactions.length > 0 ? transactions[0] : null
-  );
-  const [showNewInvoiceDialog, setShowNewInvoiceDialog] = useState(false);
-  const [showKTPScanner, setShowKTPScanner] = useState(false);
-  const [selectedProperty, setSelectedProperty] = useState<string>('');
-  const [buyerData, setBuyerData] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    address: ''
-  });
-  const [paymentData, setPaymentData] = useState({
-    downPayment: 0,
-    paymentMethod: 'transfer'
-  });
-
-  const handleKTPDataExtracted = (ktpData: any) => {
-    // Build full address from KTP data
-    let fullAddress = '';
-    if (ktpData.address) fullAddress += ktpData.address;
-    if (ktpData.rtRw) fullAddress += ` ${ktpData.rtRw}`;
-    if (ktpData.village) fullAddress += `, ${ktpData.village}`;
-    if (ktpData.district) fullAddress += `, ${ktpData.district}`;
-    if (ktpData.city) fullAddress += `, ${ktpData.city}`;
-    if (ktpData.province) fullAddress += `, ${ktpData.province}`;
-
-    setBuyerData({
-      name: ktpData.name || '',
-      phone: buyerData.phone, // Keep existing phone as KTP doesn't have it
-      email: buyerData.email, // Keep existing email as KTP doesn't have it
-      address: fullAddress.trim() || ''
+// Helper format tanggal universal (Aman untuk Firestore Timestamp, String, & Date object)
+const formatTanggalIndonesia = (rawDate) => {
+  if (!rawDate) {
+    return new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
     });
-    
-    setShowKTPScanner(false);
-  };
+  }
+
+  // Jika format Firestore Timestamp ({ seconds, nanoseconds })
+  if (typeof rawDate === 'object' && rawDate.seconds !== undefined) {
+    return new Date(rawDate.seconds * 1000).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  }
+
+  // Jika format ISO String atau JS Date
+  const parsed = new Date(rawDate);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  }
+
+  return new Date().toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+};
+
+export default function SalesInvoices({ invoices = [], onBack }) {
+  // Set default nota terpilih ke nota paling baru (indeks 0)
+  const [selectedId, setSelectedId] = useState(invoices[0]?.id || null);
+
+  const activeInvoice = invoices.find((inv) => inv.id === selectedId) || invoices[0];
 
   const handlePrint = () => {
     window.print();
   };
 
-  const handleCreateNewInvoice = () => {
-    const property = properties.find(p => p.id === selectedProperty);
-    if (property) {
-      onCreateInvoice(property, buyerData, paymentData);
-      setShowNewInvoiceDialog(false);
-      // Reset form
-      setSelectedProperty('');
-      setBuyerData({ name: '', phone: '', email: '', address: '' });
-      setPaymentData({ downPayment: 0, paymentMethod: 'transfer' });
-    }
-  };
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(price);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
-  };
+  if (!invoices || invoices.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl p-12 text-center border border-gray-200 shadow-sm max-w-xl mx-auto my-12">
+        <FileText className="size-16 text-gray-300 mx-auto mb-4" />
+        <h3 className="text-lg font-bold text-gray-800">Belum Ada Riwayat Nota Transaksi</h3>
+        <p className="text-xs text-gray-500 mt-1 mb-6">
+          Silakan pilih dan lakukan pemesanan unit properti 3D di katalog untuk menerbitkan nota resmi otomatis.
+        </p>
+        {onBack && (
+          <Button onClick={onBack} className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+            Kembali ke Katalog Properti
+          </Button>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="grid lg:grid-cols-4 gap-6">
-        {/* Sidebar - List of Invoices */}
-        <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Daftar Nota</CardTitle>
-                <Dialog open={showNewInvoiceDialog} onOpenChange={setShowNewInvoiceDialog}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="gap-1">
-                      <Plus className="size-4" />
-                      Buat
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>Buat Nota Penjualan Baru</DialogTitle>
-                      <DialogDescription>Pilih properti dan masukkan data pembeli serta pembayaran.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label>Pilih Properti</Label>
-                        <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Pilih properti..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {properties.map(property => (
-                              <SelectItem key={property.id} value={property.id}>
-                                {property.title} - {formatPrice(property.price)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <Separator />
-
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h3>Data Pembeli</h3>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setShowKTPScanner(true)}
-                            className="gap-2"
-                          >
-                            <ScanLine className="size-4" />
-                            Scan KTP
-                          </Button>
-                        </div>
-                        <div>
-                          <Label>Nama Lengkap</Label>
-                          <Input
-                            value={buyerData.name}
-                            onChange={(e) => setBuyerData({ ...buyerData, name: e.target.value })}
-                            placeholder="Masukkan nama lengkap"
-                          />
-                        </div>
-                        <div>
-                          <Label>Nomor Telepon</Label>
-                          <Input
-                            value={buyerData.phone}
-                            onChange={(e) => setBuyerData({ ...buyerData, phone: e.target.value })}
-                            placeholder="Masukkan nomor telepon"
-                          />
-                        </div>
-                        <div>
-                          <Label>Email</Label>
-                          <Input
-                            type="email"
-                            value={buyerData.email}
-                            onChange={(e) => setBuyerData({ ...buyerData, email: e.target.value })}
-                            placeholder="Masukkan email"
-                          />
-                        </div>
-                        <div>
-                          <Label>Alamat</Label>
-                          <Input
-                            value={buyerData.address}
-                            onChange={(e) => setBuyerData({ ...buyerData, address: e.target.value })}
-                            placeholder="Masukkan alamat lengkap"
-                          />
-                        </div>
-                      </div>
-
-                      <Separator />
-
-                      <div className="space-y-3">
-                        <h3>Data Pembayaran</h3>
-                        <div>
-                          <Label>Uang Muka (DP)</Label>
-                          <Input
-                            type="number"
-                            value={paymentData.downPayment}
-                            onChange={(e) => setPaymentData({ ...paymentData, downPayment: Number(e.target.value) })}
-                            placeholder="Masukkan nominal DP"
-                          />
-                        </div>
-                        <div>
-                          <Label>Metode Pembayaran</Label>
-                          <Select value={paymentData.paymentMethod} onValueChange={(v) => setPaymentData({ ...paymentData, paymentMethod: v })}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="transfer">Transfer Bank</SelectItem>
-                              <SelectItem value="cash">Tunai</SelectItem>
-                              <SelectItem value="kpr">KPR</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      <Button onClick={handleCreateNewInvoice} className="w-full">
-                        Buat Nota
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {transactions.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">Belum ada nota</p>
-              ) : (
-                <div className="space-y-2">
-                  {transactions.map(transaction => (
-                    <button
-                      key={transaction.id}
-                      onClick={() => setSelectedTransaction(transaction)}
-                      className={`w-full text-left p-3 rounded-lg border transition ${
-                        selectedTransaction?.id === transaction.id
-                          ? 'bg-blue-50 border-blue-600'
-                          : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <p className="text-sm">{transaction.invoiceNumber}</p>
-                      <p className="text-xs text-gray-600">{transaction.buyer.name}</p>
-                      <p className="text-xs text-gray-500">{formatDate(transaction.date)}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Invoice Display */}
-        <div className="lg:col-span-3">
-          {selectedTransaction ? (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Nota Penjualan</CardTitle>
-                  <Button onClick={handlePrint} className="gap-2">
-                    <Printer className="size-4" />
-                    Cetak Nota
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6 print:p-8">
-                  {/* Invoice Header */}
-                  <div className="text-center border-b pb-6">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <HomeIcon className="size-8 text-blue-600" />
-                      <h1 className="text-blue-600">RumahKu</h1>
-                    </div>
-                    <p className="text-sm text-gray-600">Jl. Properti Indah No. 123, Jakarta</p>
-                    <p className="text-sm text-gray-600">Telp: (021) 1234-5678 | Email: info@rumahku.com</p>
-                  </div>
-
-                  {/* Invoice Info */}
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <div>
-                      <h3 className="mb-3">Informasi Nota</h3>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-start gap-2">
-                          <Calendar className="size-4 mt-0.5 text-gray-600" />
-                          <div>
-                            <p className="text-gray-600">Nomor Nota</p>
-                            <p>{selectedTransaction.invoiceNumber}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <Calendar className="size-4 mt-0.5 text-gray-600" />
-                          <div>
-                            <p className="text-gray-600">Tanggal</p>
-                            <p>{formatDate(selectedTransaction.date)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 className="mb-3">Data Pembeli</h3>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-start gap-2">
-                          <User className="size-4 mt-0.5 text-gray-600" />
-                          <div>
-                            <p className="text-gray-600">Nama</p>
-                            <p>{selectedTransaction.buyer.name}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <Phone className="size-4 mt-0.5 text-gray-600" />
-                          <div>
-                            <p className="text-gray-600">Telepon</p>
-                            <p>{selectedTransaction.buyer.phone}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <Mail className="size-4 mt-0.5 text-gray-600" />
-                          <div>
-                            <p className="text-gray-600">Email</p>
-                            <p>{selectedTransaction.buyer.email}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <MapPin className="size-4 mt-0.5 text-gray-600" />
-                          <div>
-                            <p className="text-gray-600">Alamat</p>
-                            <p>{selectedTransaction.buyer.address}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  {/* Property Details */}
-                  <div>
-                    <h3 className="mb-3">Detail Properti</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h4 className="mb-2">{selectedTransaction.property.title}</h4>
-                      <p className="text-sm text-gray-600 mb-3">{selectedTransaction.property.location}</p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                        <div>
-                          <p className="text-gray-600">Tipe</p>
-                          <p className="capitalize">{selectedTransaction.property.type}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Luas Tanah</p>
-                          <p>{selectedTransaction.property.area} m²</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Kamar Tidur</p>
-                          <p>{selectedTransaction.property.bedrooms}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Kamar Mandi</p>
-                          <p>{selectedTransaction.property.bathrooms}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  {/* Payment Details */}
-                  <div>
-                    <h3 className="mb-3">Rincian Pembayaran</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Harga Properti</span>
-                        <span>{formatPrice(selectedTransaction.property.price)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Uang Muka (DP)</span>
-                        <span className="text-green-600">-{formatPrice(selectedTransaction.downPayment)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Metode Pembayaran</span>
-                        <span className="capitalize">{selectedTransaction.paymentMethod === 'transfer' ? 'Transfer Bank' : selectedTransaction.paymentMethod === 'cash' ? 'Tunai' : 'KPR'}</span>
-                      </div>
-                      <Separator />
-                      <div className="flex justify-between">
-                        <span>Sisa Pembayaran</span>
-                        <span className="text-blue-600">{formatPrice(selectedTransaction.remaining)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Footer */}
-                  <div className="border-t pt-6 mt-8">
-                    <div className="grid grid-cols-2 gap-8 text-center text-sm">
-                      <div>
-                        <p className="mb-12 text-gray-600">Pembeli</p>
-                        <div className="border-t border-gray-400 inline-block px-8">
-                          <p className="mt-2">{selectedTransaction.buyer.name}</p>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="mb-12 text-gray-600">Penjual</p>
-                        <div className="border-t border-gray-400 inline-block px-8">
-                          <p className="mt-2">RumahKu</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-center text-sm text-gray-500 mt-6">
-                    <p>Terima kasih atas kepercayaan Anda</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-gray-500">Pilih nota dari daftar atau buat nota baru</p>
-              </CardContent>
-            </Card>
+    <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <Button variant="outline" size="sm" onClick={onBack} className="h-9 gap-1 text-xs">
+              <ArrowLeft className="size-3.5" /> Kembali
+            </Button>
           )}
+          <div>
+            <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Lembar Nota & Bukti Transaksi</h2>
+            <p className="text-xs text-gray-500">Dokumen transaksi sah kepemilikan unit Delon Clusters 3D</p>
+          </div>
         </div>
+        <Button
+          onClick={handlePrint}
+          className="bg-gray-900 hover:bg-black text-white text-xs gap-2 shadow-sm font-semibold print:hidden"
+        >
+          <Printer className="size-4" /> Cetak / Simpan PDF
+        </Button>
       </div>
 
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          .print\\:p-8, .print\\:p-8 * {
-            visibility: visible;
-          }
-          .print\\:p-8 {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-          }
-          button {
-            display: none !important;
-          }
-        }
-      `}</style>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-      {/* KTP Scanner Modal */}
-      {showKTPScanner && (
-        <KTPScanner
-          onDataExtracted={handleKTPDataExtracted}
-          onClose={() => setShowKTPScanner(false)}
-        />
-      )}
+        {/* Kolom Kiri: Daftar Riwayat Nota (Tanpa tombol + Buat) */}
+        <div className="lg:col-span-4 bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3 print:hidden">
+          <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+            <h4 className="font-bold text-xs uppercase tracking-wider text-gray-600">
+              Daftar Nota ({invoices.length})
+            </h4>
+            <Badge variant="outline" className="text-[10px] text-blue-600 bg-blue-50 border-blue-200 font-semibold">
+              Sinkron Cloud
+            </Badge>
+          </div>
+
+          <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+            {invoices.map((inv) => {
+              const isSelected = (inv.id === activeInvoice?.id);
+              return (
+                <div
+                  key={inv.id}
+                  onClick={() => setSelectedId(inv.id)}
+                  className={`p-3.5 rounded-xl border transition cursor-pointer text-left ${isSelected
+                      ? 'bg-blue-50/60 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
+                      : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/70'
+                    }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-xs text-blue-700">{inv.id}</span>
+                    <Badge className="bg-emerald-600 text-white text-[10px] py-0">Terbit</Badge>
+                  </div>
+                  <p className="font-bold text-gray-800 text-xs mt-1 truncate">
+                    {inv.buyerName || inv.buyer?.name || 'Pembeli Terverifikasi'}
+                  </p>
+                  <div className="flex items-center justify-between text-[11px] text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="size-3 text-gray-400" />
+                      {formatTanggalIndonesia(inv.date || inv.createdAt)}
+                    </span>
+                    <span className="font-semibold text-gray-700">
+                      DP: Rp {Number(inv.downPayment || inv.payment?.downPayment || 0).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Kolom Kanan: Lembar Fisik Nota (Ready to Print) */}
+        <div className="lg:col-span-8 bg-white rounded-2xl p-6 md:p-8 border border-gray-200 shadow-md print:border-none print:shadow-none print:p-0">
+
+          {/* Header Surat Nota */}
+          <div className="text-center pb-5 border-b-2 border-gray-800 space-y-1">
+            <div className="flex items-center justify-center gap-2">
+              <Building2 className="size-7 text-blue-600" />
+              <h1 className="text-2xl font-black tracking-tight text-gray-900 uppercase">
+                Delon Clusters 3D
+              </h1>
+            </div>
+            <p className="text-xs font-semibold text-gray-600">
+              Pengembangan Kawasan Properti Modern Berbasis Visualisasi Real-Time Tiga Dimensi
+            </p>
+            <p className="text-[11px] text-gray-500">
+              Jl. Delon Boulevard No. 88, Ponorogo, Jawa Timur | Telp: (0352) 889977 | Email: official@delonclusters.com
+            </p>
+          </div>
+
+          {/* Nomor Nota & Status */}
+          <div className="grid grid-cols-2 gap-4 py-4 border-b border-gray-200 text-xs">
+            <div>
+              <p className="text-gray-500">Nomor Registrasi Nota:</p>
+              <p className="font-mono font-bold text-sm text-blue-700">{activeInvoice?.id}</p>
+              <p className="text-gray-500 mt-2">Tanggal Terbit:</p>
+              <p className="font-semibold text-gray-800">
+                {formatTanggalIndonesia(activeInvoice?.date || activeInvoice?.createdAt)}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-gray-500">Status Pembayaran:</p>
+              <span className="inline-block mt-1 px-3 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-md text-xs border border-emerald-300">
+                BOOKING & DP TERVERIFIKASI
+              </span>
+              <p className="text-gray-500 mt-2">Kanal Pembayaran:</p>
+              <p className="font-semibold text-gray-800">
+                {activeInvoice?.paymentMethod || activeInvoice?.payment?.paymentMethod || 'Transfer Bank Otomatis'}
+              </p>
+            </div>
+          </div>
+
+          {/* Grid Informasi Pembeli & Unit */}
+          <div className="grid md:grid-cols-2 gap-6 py-5 border-b border-gray-200 text-xs">
+
+            {/* Box Data Pembeli */}
+            <div className="bg-gray-50/80 p-4 rounded-xl border border-gray-200 space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-gray-900 pb-1 border-b border-gray-200">
+                <User className="size-4 text-blue-600" />
+                <span>Identitas Pemilik / Pembeli</span>
+              </div>
+              <p><span className="text-gray-500">Nama:</span> <strong className="text-gray-900">{activeInvoice?.buyerName || activeInvoice?.buyer?.name || '-'}</strong></p>
+              <p><span className="text-gray-500">No. WhatsApp:</span> <strong className="text-gray-900">{activeInvoice?.buyerPhone || activeInvoice?.buyer?.phone || '-'}</strong></p>
+              <p><span className="text-gray-500">Email:</span> <strong className="text-gray-900">{activeInvoice?.buyerEmail || activeInvoice?.buyer?.email || '-'}</strong></p>
+              <p><span className="text-gray-500">Domisili KTP:</span> <strong className="text-gray-900">{activeInvoice?.buyerAddress || activeInvoice?.buyer?.address || '-'}</strong></p>
+            </div>
+
+            {/* Box Data Properti */}
+            <div className="bg-gray-50/80 p-4 rounded-xl border border-gray-200 space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-gray-900 pb-1 border-b border-gray-200">
+                <Building2 className="size-4 text-blue-600" />
+                <span>Rincian Unit Properti 3D</span>
+              </div>
+              <p><span className="text-gray-500">Tipe Unit:</span> <strong className="text-gray-900">{activeInvoice?.propertyTitle || activeInvoice?.property?.title || 'Cluster Premium Delon'}</strong></p>
+              <p><span className="text-gray-500">Lokasi Blok:</span> <strong className="text-gray-900">{activeInvoice?.propertyLocation || activeInvoice?.property?.location || 'Kawasan Blok A - Delon Clusters'}</strong></p>
+              <p><span className="text-gray-500">Spesifikasi:</span> <strong className="text-gray-900">{activeInvoice?.propertyArea || activeInvoice?.property?.area || 120} m² (Visual 3D Verified)</strong></p>
+              <p><span className="text-gray-500">Legalitas:</span> <strong className="text-emerald-700">SHM (Sertifikat Hak Milik)</strong></p>
+            </div>
+
+          </div>
+
+          {/* Rincian Finansial Tabel */}
+          <div className="py-5 border-b border-gray-200">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-300 text-gray-500 text-left">
+                  <th className="pb-2">Deskripsi Alokasi Finansial</th>
+                  <th className="pb-2 text-right">Nominal (Rupiah)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 font-medium">
+                <tr>
+                  <td className="py-2.5 text-gray-800">Total Harga Unit Properti</td>
+                  <td className="py-2.5 text-right font-bold text-gray-900">
+                    Rp {Number(activeInvoice?.totalPrice || activeInvoice?.propertyPrice || activeInvoice?.property?.price || 0).toLocaleString('id-ID')}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 text-emerald-700 font-semibold">Uang Muka (Down Payment - DP) Terbayar</td>
+                  <td className="py-2.5 text-right font-bold text-emerald-700">
+                    - Rp {Number(activeInvoice?.downPayment || activeInvoice?.payment?.downPayment || 0).toLocaleString('id-ID')}
+                  </td>
+                </tr>
+                <tr className="bg-blue-50/70 font-black text-sm">
+                  <td className="p-3 text-blue-950">Sisa Pelunasan / Akad KPR</td>
+                  <td className="p-3 text-right text-blue-600">
+                    Rp {Number(
+                      Math.max(
+                        0,
+                        (activeInvoice?.totalPrice || activeInvoice?.propertyPrice || activeInvoice?.property?.price || 0) -
+                        (activeInvoice?.downPayment || activeInvoice?.payment?.downPayment || 0)
+                      )
+                    ).toLocaleString('id-ID')}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Tanda Tangan & Footer Pengesahan */}
+          <div className="pt-6 grid grid-cols-2 gap-4 text-center text-xs">
+            <div>
+              <p className="text-gray-500">Diverifikasi oleh Sistem,</p>
+              <p className="font-bold text-gray-800 mt-0.5">Delon Clusters 3D Admin</p>
+              <div className="my-3 flex justify-center">
+                <Badge variant="outline" className="text-emerald-700 bg-emerald-50 border-emerald-300 text-[10px] gap-1 font-semibold">
+                  <ShieldCheck className="size-3" /> E-Signature Verified
+                </Badge>
+              </div>
+              <p className="font-mono text-[10px] text-gray-400">Security Hash: {activeInvoice?.id?.slice(0, 16) || 'SEC-VERIFIED'}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Pemilik / Pembeli Sah,</p>
+              <p className="font-bold text-gray-900 mt-0.5">{activeInvoice?.buyerName || activeInvoice?.buyer?.name || 'Pembeli'}</p>
+              <div className="h-10"></div>
+              <p className="font-bold text-gray-800 underline underline-offset-4">
+                ( {activeInvoice?.buyerName || activeInvoice?.buyer?.name || '.......................'} )
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
