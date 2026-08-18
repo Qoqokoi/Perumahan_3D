@@ -4,16 +4,12 @@ import {
   collection, onSnapshot, doc, setDoc, updateDoc, serverTimestamp
 } from 'firebase/firestore';
 import {
-  Building2, FileText, UserCheck, ShieldCheck,
-  LogIn, LogOut, Plus, Trash2, Check, X
+  Building2, Search, MapPin, Bed, Bath, Maximize2,
+  FileText, ShieldCheck, LogOut, X, Check, Lock, Camera, UserCheck
 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Badge } from './components/ui/badge';
-
-// Menggunakan Komponen Asli Proyek
-import { PropertyList } from './components/PropertyList';
-import { PropertyFilters } from './components/PropertyFilters';
 import { PropertyDetail } from './components/PropertyDetail';
 import SalesInvoice from './components/SalesInvoice';
 import { KTPScanner } from './components/KTPScanner';
@@ -67,45 +63,85 @@ export interface Invoice {
   createdAt?: any;
 }
 
+// Data Default dengan Gambar Arsitektur 3D HD (Anti-Broken Image)
 const defaultProperties: Property[] = [
   {
     id: 'PROP-01',
-    title: 'Cluster Modern Delons Prime',
+    title: 'Cluster Delon Prime 3D',
     price: 2500000000,
-    location: 'Jakarta Selatan',
+    location: 'Kawasan Delon Hills Blok A-1',
     bedrooms: 4,
     bathrooms: 3,
     area: 250,
     yearBuilt: 2026,
-    image: '/images/perumahanbanyak.jpeg',
-    description: 'Rumah modern minimalis dengan tata ruang efisien dan visualisasi pencahayaan Lumion 3D.',
-    features: ['Smart Home', 'Kolam Renang Privat', 'Security 24 Jam', 'Carport 2 Mobil']
+    image: '/images/rumah-delon.jpeg',
+    description: 'Rumah modern kontemporer dengan fasad presisi hasil pemodelan 3D dan tata cahaya alami.',
+    features: ['Smart Home System', 'Kolam Renang Privat', 'Security 24 Jam', 'Carport 2 Mobil']
   },
   {
     id: 'PROP-02',
-    title: 'Cluster Minimalis Delon',
+    title: 'Cluster Dafi Modern 3D',
     price: 1850000000,
-    location: 'Surabaya',
+    location: 'Kawasan Delon Hills Blok B-4',
     bedrooms: 3,
     bathrooms: 2,
     area: 180,
     yearBuilt: 2026,
-    image: '/images/perumahanbanyak.jpeg',
-    description: 'Hunian kompak modern dengan pemodelan presisi eksterior dan interior Lumion.',
-    features: ['Inner Garden', 'Solar Water Heater', 'One Gate System']
+    image: '/images/rumah-dafi.jpeg',
+    description: 'Hunian minimalis dengan efisiensi sirkulasi udara optimal dan pencahayaan Lumion 3D.',
+    features: ['Inner Garden', 'Solar Water Heater', 'One Gate System', 'Balkon Atas']
   },
   {
     id: 'PROP-03',
-    title: 'Villa Panorama Delons',
-    price: 3200000000,
-    location: 'Jember',
+    title: 'Cluster Fathur Deluxe 3D',
+    price: 2100000000,
+    location: 'Kawasan Delon Hills Blok C-2',
     bedrooms: 4,
     bathrooms: 3,
+    area: 210,
+    yearBuilt: 2026,
+    image: '/images/rumah-fathur.jpeg',
+    description: 'Desain arsitektur modern tropis dengan ruang keluarga terbuka dan double height ceiling.',
+    features: ['Double Ceiling', 'Smart Door Lock', 'Kitchen Set Mewah', 'Taman Samping']
+  },
+  {
+    id: 'PROP-04',
+    title: 'Grand Delon Hills 3D',
+    price: 1450000000,
+    location: 'Kawasan Delon Valley Blok D-8',
+    bedrooms: 3,
+    bathrooms: 2,
+    area: 150,
+    yearBuilt: 2026,
+    image: '/images/perumahan-1.jpeg',
+    description: 'Kompleks hunian asri dengan view panorama dan jalur utilitas bawah tanah.',
+    features: ['Underground Cable', 'CCTV 24 Jam', 'Area Bermain Anak', 'Clubhouse']
+  },
+  {
+    id: 'PROP-05',
+    title: 'Villa Panorama UNIDA 3D',
+    price: 3200000000,
+    location: 'Kawasan UNIDA View Kav. 12',
+    bedrooms: 5,
+    bathrooms: 4,
     area: 300,
     yearBuilt: 2026,
-    image: '/images/perumahanbanyak.jpeg',
-    description: 'Villa eksklusif dengan view perbukitan hasil simulasi walkthrough 3D.',
-    features: ['Balkon Luas', 'Private Jacuzzi', 'Underground Cable']
+    image: '/images/geter-unida.jpeg',
+    description: 'Villa eksklusif bernuansa asri hasil simulasi walkthrough 3D dengan fasilitas lengkap.',
+    features: ['Private Jacuzzi', 'Rooftop Lounge', 'Taman Tropis', 'Garasi Tertutup']
+  },
+  {
+    id: 'PROP-06',
+    title: 'The Royal Delon Residence 3D',
+    price: 2800000000,
+    location: 'Kawasan Delon Lakeview Blok E-5',
+    bedrooms: 4,
+    bathrooms: 3,
+    area: 240,
+    yearBuilt: 2026,
+    image: '/images/rumah-delon.jpeg',
+    description: 'Hunian premium dengan konsep arsitektur mewah dan fasad kaca tempered modern.',
+    features: ['Smart Glass Window', 'Solar Panel Ready', 'Automatic Gate', 'Gazebo']
   }
 ];
 
@@ -115,23 +151,21 @@ export default function App() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
 
-  // Firestore Realtime States
+  // Firestore States
   const [properties, setProperties] = useState<Property[]>(defaultProperties);
-  const [filteredProperties, setFilteredProperties] = useState<Property[]>(defaultProperties);
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
 
-  // Filter States
+  // Search & Filter States
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedLocation, setSelectedLocation] = useState<string>('all');
-  const [priceRange, setPriceRange] = useState<number>(5000000000);
+  const [maxPrice, setMaxPrice] = useState<number>(4000000000);
 
-  // Login Form States
+  // Login States
   const [loginUsername, setLoginUsername] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
 
-  // Register Form States
+  // Register States
   const [regFullName, setRegFullName] = useState<string>('');
   const [regNik, setRegNik] = useState<string>('');
   const [regPhone, setRegPhone] = useState<string>('');
@@ -142,7 +176,7 @@ export default function App() {
   const [ktpImage, setKtpImage] = useState<string>('');
   const [selfieImage, setSelfieImage] = useState<string>('');
 
-  // 1. SINKRONISASI FIRESTORE
+  // Sinkronisasi Realtime Cloud Firestore
   useEffect(() => {
     const unsubProps = onSnapshot(collection(db, 'properties'), (snapshot) => {
       if (!snapshot.empty) {
@@ -191,23 +225,15 @@ export default function App() {
     };
   }, []);
 
-  // 2. FILTER LOGIC
-  useEffect(() => {
-    let result = properties;
-    if (searchQuery) {
-      result = result.filter((p) =>
-        p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.location.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    if (selectedLocation !== 'all') {
-      result = result.filter((p) => p.location.toLowerCase().includes(selectedLocation.toLowerCase()));
-    }
-    result = result.filter((p) => p.price <= priceRange);
-    setFilteredProperties(result);
-  }, [properties, searchQuery, selectedLocation, priceRange]);
+  // Filter Logic
+  const filteredProperties = properties.filter((p) => {
+    const matchSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.location.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchPrice = p.price <= maxPrice;
+    return matchSearch && matchPrice;
+  });
 
-  // 3. AUTH & FLOW HANDLERS
+  // Auth Handlers
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -228,7 +254,7 @@ export default function App() {
     }
 
     if (foundUser.status === 'pending') {
-      setLoginError('AKUN BELUM DI-ACC ADMIN! Identitas Anda sedang diverifikasi di cloud database.');
+      setLoginError('AKUN BELUM DI-ACC ADMIN! Identitas Anda sedang diverifikasi.');
       return;
     }
 
@@ -247,7 +273,7 @@ export default function App() {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regFullName || !regUsername || !regEmail || !regPhone || !regNik || !regAddress || !regPassword) {
-      alert('Wajib mengisi seluruh data pendaftaran!');
+      alert('Wajib mengisi seluruh formulir pendaftaran!');
       return;
     }
 
@@ -275,7 +301,7 @@ export default function App() {
 
     try {
       await setDoc(doc(db, 'users', newId), newAccount);
-      alert('Pendaftaran Berhasil! Akun Anda menunggu verifikasi admin.');
+      alert('Pendaftaran Berhasil! Akun Anda menunggu verifikasi Admin.');
       setRegFullName('');
       setRegNik('');
       setRegPhone('');
@@ -404,27 +430,109 @@ export default function App() {
         </div>
       </header>
 
-      {/* MAIN CONTAINER */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
 
-        {/* VIEW 1: KATALOG (MENGGUNAKAN KOMPONEN ASLI) */}
+        {/* VIEW 1: KATALOG PROPERTI 3D */}
         {activeTab === 'catalogue' && (
           <div className="space-y-6">
-            <PropertyFilters
-              {...({
-                searchQuery,
-                setSearchQuery,
-                selectedLocation,
-                setSelectedLocation,
-                priceRange,
-                setPriceRange
-              } as any)}
-            />
 
-            <PropertyList
-              properties={filteredProperties}
-              onSelectProperty={(prop: Property) => setSelectedProperty(prop)}
-            />
+            {/* Filter Bar Ringkas */}
+            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-center">
+              <div className="w-full md:w-1/2 relative">
+                <Search className="absolute left-3.5 top-3 size-4 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Cari cluster, lokasi kota, atau spesifikasi..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 text-xs bg-gray-50/60"
+                />
+              </div>
+
+              <div className="w-full md:w-auto flex items-center gap-3">
+                <div className="text-xs font-medium text-gray-600">
+                  Maksimal Harga: <span className="font-bold text-blue-600">Rp {(maxPrice / 1000000).toLocaleString('id-ID')} Jt</span>
+                </div>
+                <input
+                  type="range"
+                  min="500000000"
+                  max="4000000000"
+                  step="100000000"
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(Number(e.target.value))}
+                  className="w-36 accent-blue-600 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Grid Kartu Properti Modern */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredProperties.map((prop) => (
+                <div
+                  key={prop.id}
+                  className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col group"
+                >
+                  <div className="aspect-[16/10] bg-gray-100 relative overflow-hidden">
+                    <img
+                      src={prop.image}
+                      alt={prop.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80';
+                      }}
+                    />
+                    <Badge className="absolute top-3 left-3 bg-blue-600 text-white text-[10px]">
+                      Model 3D Ready
+                    </Badge>
+                  </div>
+
+                  <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                    <div>
+                      <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-1">
+                        <MapPin className="size-3.5 text-blue-600" />
+                        <span>{prop.location}</span>
+                      </div>
+                      <h3 className="font-bold text-gray-900 text-base group-hover:text-blue-600 transition">
+                        {prop.title}
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{prop.description}</p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 py-2.5 border-y border-gray-100 text-center text-gray-600">
+                      <div>
+                        <Bed className="size-4 mx-auto text-blue-600 mb-0.5" />
+                        <span className="text-[11px] font-semibold">{prop.bedrooms} Kamar</span>
+                      </div>
+                      <div>
+                        <Bath className="size-4 mx-auto text-blue-600 mb-0.5" />
+                        <span className="text-[11px] font-semibold">{prop.bathrooms} Mandi</span>
+                      </div>
+                      <div>
+                        <Maximize2 className="size-4 mx-auto text-blue-600 mb-0.5" />
+                        <span className="text-[11px] font-semibold">{prop.area} m²</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <p className="text-[10px] text-gray-400 uppercase font-medium">Harga Resmi</p>
+                        <p className="font-extrabold text-blue-600 text-base">
+                          Rp {(prop.price / 1000000).toLocaleString('id-ID')} Jt
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => setSelectedProperty(prop)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm"
+                      >
+                        Beli / Pesan Unit
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -438,10 +546,10 @@ export default function App() {
 
         {/* VIEW 3: REGISTRASI DENGAN KTP SCANNER */}
         {activeTab === 'register' && (
-          <div className="max-w-2xl mx-auto bg-white rounded-2xl p-6 border shadow-sm space-y-6">
+          <div className="max-w-2xl mx-auto bg-white rounded-2xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Registrasi Akun Calon Penghuni</h2>
-              <p className="text-xs text-gray-500">Lengkapi data identitas dan verifikasi E-KTP untuk validasi pemesanan.</p>
+              <p className="text-xs text-gray-500 mt-0.5">Lengkapi data identitas dan verifikasi E-KTP untuk validasi pemesanan.</p>
             </div>
 
             <form onSubmit={handleRegisterSubmit} className="space-y-4 text-xs">
