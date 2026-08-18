@@ -1,4 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { db } from '../lib/firebase';
+import {
+  collection,
+  onSnapshot,
+  doc,
+  setDoc,
+  updateDoc,
+  getDocs
+} from 'firebase/firestore';
 import { PropertyList } from './components/PropertyList';
 import { PropertyFilters } from './components/PropertyFilters';
 import { PropertyDetail } from './components/PropertyDetail';
@@ -7,7 +16,7 @@ import { useIsMobile } from './components/ui/use-mobile';
 import {
   Home, FileText, LogIn,
   Video, Users, Building2, MessageCircle, ShieldCheck,
-  Camera, CheckCircle2, XCircle, PlusCircle, UserCheck, ShieldAlert, RefreshCw
+  Camera, CheckCircle2, XCircle, PlusCircle, UserCheck
 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -63,9 +72,9 @@ export interface Transaction {
   paymentMethod: string;
 }
 
-const initialProperties: Property[] = [
+const defaultProperties: Property[] = [
   {
-    id: '1',
+    id: 'prop-1',
     title: 'Cluster Modern Delons Prime',
     price: 2500000000,
     location: 'Jakarta Selatan',
@@ -79,7 +88,7 @@ const initialProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '2',
+    id: 'prop-2',
     title: 'Villa Kontemporer Delons Eco',
     price: 4500000000,
     location: 'Bandung',
@@ -93,7 +102,7 @@ const initialProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '3',
+    id: 'prop-3',
     title: 'Cluster Minimalis Delon',
     price: 1850000000,
     location: 'Surabaya',
@@ -107,7 +116,7 @@ const initialProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '4',
+    id: 'prop-4',
     title: 'Villa Panorama Delons',
     price: 3200000000,
     location: 'Jember',
@@ -121,7 +130,7 @@ const initialProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '5',
+    id: 'prop-5',
     title: 'Delons Residence Suite A',
     price: 2100000000,
     location: 'Bandung',
@@ -135,7 +144,7 @@ const initialProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '6',
+    id: 'prop-6',
     title: 'Delons Residence Suite B',
     price: 2750000000,
     location: 'Tasikmalaya',
@@ -150,62 +159,95 @@ const initialProperties: Property[] = [
   }
 ];
 
-const initialUsers: UserAccount[] = [
-  {
-    id: 'USR-ADMIN',
-    fullName: 'Super Administrator',
-    username: 'admin',
-    email: 'admin@delons.com',
-    phone: '081331517717',
-    nik: '3200000000000001',
-    address: 'Kantor Pusat Delons Clusters',
-    occupation: 'Head Administrator',
-    ktpImage: '/images/gambar_delon.jpeg',
-    faceImage: '/images/gambar_delon.jpeg',
-    status: 'approved',
-    role: 'admin',
-    password: 'admin123',
-    registeredAt: '2024-01-01'
-  },
-  {
-    id: 'USR-001',
-    fullName: 'Muhammad Dafi Al Haq',
-    username: 'dafi_buyer',
-    email: 'dafi@gmail.com',
-    phone: '081234567890',
-    nik: '3201123456780001',
-    address: 'Jl. Pemuda No. 45, Bandung',
-    occupation: 'Software Engineer',
-    ktpImage: '/images/gambar_dapi.jpeg',
-    faceImage: '/images/gambar_dapi.jpeg',
-    status: 'approved',
-    role: 'user',
-    password: 'user123',
-    registeredAt: '2024-05-10'
-  }
-];
+const defaultAdmin: UserAccount = {
+  id: 'USR-ADMIN',
+  fullName: 'Super Administrator',
+  username: 'admin',
+  email: 'admin@delons.com',
+  phone: '081331517717',
+  nik: '3200000000000001',
+  address: 'Kantor Pusat Delons Clusters',
+  occupation: 'Head Administrator',
+  ktpImage: '/images/gambar_delon.jpeg',
+  faceImage: '/images/gambar_delon.jpeg',
+  status: 'approved',
+  role: 'admin',
+  password: 'admin123',
+  registeredAt: '2024-01-01'
+};
 
 type PageType = 'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services' | 'admin';
 
 export default function App() {
-  const [properties, setProperties] = useState<Property[]>(initialProperties);
-  const [filteredProperties, setFilteredProperties] = useState<Property[]>(initialProperties);
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [users, setUsers] = useState<UserAccount[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [users, setUsers] = useState<UserAccount[]>(initialUsers);
+  const [filteredProperties, setFilteredProperties] = useState<Property[]>([]);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
 
-  // State Session Auth
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    const saved = localStorage.getItem('delons_session');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [currentPage, setCurrentPage] = useState<PageType>('home');
   const [adminActiveTab, setAdminActiveTab] = useState<'users' | 'addProperty'>('users');
-
   const isMobile = useIsMobile();
 
-  // State Form Login
+  // Sinkronisasi Real-Time Firestore (Users, Properties, Transactions)
+  useEffect(() => {
+    // 1. Listen Properties
+    const unsubProps = onSnapshot(collection(db, 'properties'), (snapshot) => {
+      if (snapshot.empty) {
+        // Auto-seed default properties jika Firestore kosong
+        defaultProperties.forEach(p => setDoc(doc(db, 'properties', p.id), p));
+      } else {
+        const list: Property[] = [];
+        snapshot.forEach(docSnap => list.push(docSnap.data() as Property));
+        setProperties(list);
+        setFilteredProperties(list);
+      }
+    });
+
+    // 2. Listen Users
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (snapshot.empty) {
+        // Auto-seed admin akun jika Firestore kosong
+        setDoc(doc(db, 'users', defaultAdmin.id), defaultAdmin);
+      } else {
+        const list: UserAccount[] = [];
+        snapshot.forEach(docSnap => list.push(docSnap.data() as UserAccount));
+        setUsers(list);
+      }
+    });
+
+    // 3. Listen Transactions
+    const unsubTrx = onSnapshot(collection(db, 'transactions'), (snapshot) => {
+      const list: Transaction[] = [];
+      snapshot.forEach(docSnap => list.push(docSnap.data() as Transaction));
+      setTransactions(list);
+    });
+
+    return () => {
+      unsubProps();
+      unsubUsers();
+      unsubTrx();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('delons_session', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('delons_session');
+    }
+  }, [currentUser]);
+
+  // Form State Login
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // State Form Register
+  // Form State Register
   const [regFullName, setRegFullName] = useState('');
   const [regUsername, setRegUsername] = useState('');
   const [regEmail, setRegEmail] = useState('');
@@ -218,13 +260,13 @@ export default function App() {
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
 
-  // State Kamera Langsung (Webcam Modal)
+  // State WebCam
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<'ktp' | 'face' | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // State Form Tambah Properti (Admin)
+  // State Tambah Properti
   const [newTitle, setNewTitle] = useState('');
   const [newPrice, setNewPrice] = useState<number>(2000000000);
   const [newLocation, setNewLocation] = useState('');
@@ -236,7 +278,6 @@ export default function App() {
   const [newDesc, setNewDesc] = useState('');
   const [newFeatures, setNewFeatures] = useState('Smart Home, Garasi 2 Mobil, Keamanan 24 Jam');
 
-  // Navigation History Sync
   const navigateTo = (page: PageType, replace = false) => {
     if (page === currentPage) return;
     if (replace) {
@@ -269,13 +310,13 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Handler Kamera Langsung
+  // WebCam Handlers
   const startCamera = async (target: 'ktp' | 'face') => {
     setCameraTarget(target);
     setIsCameraActive(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: target === 'face' ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: target === 'face' ? 'user' : 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false
       });
       mediaStreamRef.current = stream;
@@ -284,7 +325,7 @@ export default function App() {
         videoRef.current.play();
       }
     } catch (err) {
-      alert('Gagal mengakses kamera. Pastikan izin kamera telah diaktifkan di browser.');
+      alert('Izin kamera ditolak atau tidak tersedia di browser Anda.');
       setIsCameraActive(false);
     }
   };
@@ -292,12 +333,12 @@ export default function App() {
   const capturePhoto = () => {
     if (!videoRef.current) return;
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth || 640;
-    canvas.height = videoRef.current.videoHeight || 480;
+    canvas.width = 480;
+    canvas.height = 360;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg');
+      ctx.drawImage(videoRef.current, 0, 0, 480, 360);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7); // Kompresi ringan agar ramah Firestore
       if (cameraTarget === 'ktp') setRegKtpImage(dataUrl);
       if (cameraTarget === 'face') setRegFaceImage(dataUrl);
     }
@@ -325,69 +366,79 @@ export default function App() {
     }
   };
 
-  // Login Validator
+  // Login Validator via Firestore Data
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginIdentifier || !loginPassword) {
-      alert('Silakan masukkan Username/Email dan Password!');
+    if (!loginIdentifier.trim() || !loginPassword.trim()) {
+      alert('Masukkan Username/Email dan Password!');
       return;
     }
 
     const foundUser = users.find(
-      u => (u.username.toLowerCase() === loginIdentifier.toLowerCase() || u.email.toLowerCase() === loginIdentifier.toLowerCase()) && u.password === loginPassword
+      u => (u.username.toLowerCase() === loginIdentifier.trim().toLowerCase() ||
+        u.email.toLowerCase() === loginIdentifier.trim().toLowerCase()) &&
+        u.password === loginPassword
     );
 
     if (!foundUser) {
-      alert('Kredensial tidak valid! Periksa kembali username dan password Anda.');
+      alert('Kredensial tidak valid! Username atau Password salah.');
       return;
     }
 
-    // Cek Role Admin
     if (foundUser.role === 'admin') {
       setCurrentUser(foundUser);
+      setLoginIdentifier('');
+      setLoginPassword('');
       alert('Selamat datang, Admin! Mengarahkan ke Control Panel.');
       navigateTo('admin');
       return;
     }
 
-    // Cek Status Approval User
     if (foundUser.status === 'pending') {
-      alert('AKUN BELUM DI-ACC ADMIN!\n\nIdentitas KTP & Wajah Anda sedang dalam antrean verifikasi Admin. Silakan tunggu hingga status disetujui.');
+      alert('AKUN BELUM DI-ACC ADMIN!\n\nIdentitas Anda sedang diverifikasi di cloud database. Silakan hubungi Admin atau tunggu ACC.');
       return;
     }
 
     if (foundUser.status === 'rejected') {
-      alert('AKUN DITOLAK!\n\nVerifikasi KTP atau Wajah Anda tidak sesuai standar. Silakan hubungi Admin atau lakukan registrasi ulang.');
+      alert('AKUN DITOLAK!\n\nDokumen verifikasi Anda ditolak oleh Admin.');
       return;
     }
 
     setCurrentUser(foundUser);
-    alert(`Login Berhasil! Selamat datang di Delons Clusters, ${foundUser.fullName}.`);
+    setLoginIdentifier('');
+    setLoginPassword('');
+    alert(`Selamat datang di Delons Clusters, ${foundUser.fullName}!`);
     navigateTo('home');
   };
 
-  // Register Submit
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  // Register ke Cloud Firestore
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regFullName || !regUsername || !regEmail || !regPhone || !regNik || !regAddress || !regPassword || !regConfirmPassword) {
-      alert('Wajib melengkapi semua formulir identitas!');
+      alert('Wajib mengisi seluruh data pendaftaran!');
       return;
     }
     if (regNik.length !== 16) {
-      alert('Format NIK KTP wajib 16 digit angka!');
+      alert('Format NIK KTP wajib 16 digit!');
       return;
     }
     if (!regKtpImage || !regFaceImage) {
-      alert('Wajib melampirkan 2 Foto: Foto Dokumen KTP dan Foto Wajah Asli!');
+      alert('Wajib melampirkan Foto KTP dan Foto Wajah Kamera!');
       return;
     }
     if (regPassword !== regConfirmPassword) {
-      alert('Konfirmasi Password tidak sesuai!');
+      alert('Password dan Konfirmasi tidak cocok!');
       return;
     }
 
+    if (users.some(u => u.username.toLowerCase() === regUsername.toLowerCase())) {
+      alert('Username sudah terdaftar! Gunakan username lain.');
+      return;
+    }
+
+    const newUserId = `USR-${Date.now()}`;
     const newUser: UserAccount = {
-      id: `USR-${Date.now()}`,
+      id: newUserId,
       fullName: regFullName,
       username: regUsername,
       email: regEmail,
@@ -397,33 +448,54 @@ export default function App() {
       occupation: regOccupation || 'Wiraswasta / Profesional',
       ktpImage: regKtpImage,
       faceImage: regFaceImage,
-      status: 'pending', // Wajib di-ACC Admin
+      status: 'pending',
       role: 'user',
       password: regPassword,
       registeredAt: new Date().toISOString().split('T')[0]
     };
 
-    setUsers([...users, newUser]);
-    alert('REGISTRASI BERHASIL DISUBMIT!\n\nAkun Anda telah masuk ke antrean verifikasi Admin. Akun baru bisa digunakan untuk login setelah disetujui (di-ACC) oleh Admin.');
-    navigateTo('login');
+    try {
+      await setDoc(doc(db, 'users', newUserId), newUser);
+      alert('PENDAFTARAN BERHASIL DISIMPAN KE CLOUD!\n\nAkun Anda telah masuk ke Database Cloud Firebase dengan status PENDING.');
+
+      setRegFullName('');
+      setRegUsername('');
+      setRegEmail('');
+      setRegPhone('');
+      setRegNik('');
+      setRegAddress('');
+      setRegKtpImage('');
+      setRegFaceImage('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+
+      navigateTo('login');
+    } catch (err) {
+      alert('Gagal menyimpan data ke Firestore. Pastikan Firestore rules dalam Test Mode.');
+    }
   };
 
-  // Admin Actions: Approve / Reject User
-  const handleUserStatusUpdate = (userId: string, newStatus: 'approved' | 'rejected') => {
-    setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
-    alert(`Status pengguna berhasil diubah menjadi: ${newStatus.toUpperCase()}`);
+  // Admin ACC/Reject via Firestore Update
+  const handleUserStatusUpdate = async (userId: string, newStatus: 'approved' | 'rejected') => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { status: newStatus });
+      alert(`Status akun berhasil diubah menjadi: ${newStatus.toUpperCase()}`);
+    } catch (err) {
+      alert('Gagal mengupdate status akun di cloud.');
+    }
   };
 
-  // Admin Actions: Tambah Rumah 3D
-  const handleAddProperty = (e: React.FormEvent) => {
+  // Admin Tambah Properti ke Cloud Firestore
+  const handleAddProperty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle || !newLocation || !newDesc) {
-      alert('Mohon lengkapi judul, lokasi, dan deskripsi properti!');
+      alert('Lengkapi judul, lokasi, dan deskripsi!');
       return;
     }
 
+    const newPropId = `PROP-${Date.now()}`;
     const newProp: Property = {
-      id: `PROP-${Date.now()}`,
+      id: newPropId,
       title: newTitle,
       price: Number(newPrice),
       location: newLocation,
@@ -437,13 +509,15 @@ export default function App() {
       yearBuilt: new Date().getFullYear()
     };
 
-    const updated = [newProp, ...properties];
-    setProperties(updated);
-    setFilteredProperties(updated);
-    alert(`Properti "${newTitle}" berhasil ditambahkan ke katalog utama!`);
-    setNewTitle('');
-    setNewDesc('');
-    setAdminActiveTab('users');
+    try {
+      await setDoc(doc(db, 'properties', newPropId), newProp);
+      alert(`Properti "${newTitle}" berhasil ditambahkan ke Cloud Database & Katalog!`);
+      setNewTitle('');
+      setNewDesc('');
+      setAdminActiveTab('users');
+    } catch (err) {
+      alert('Gagal menyimpan properti ke Firestore.');
+    }
   };
 
   const filterProperties = ({
@@ -468,8 +542,8 @@ export default function App() {
     setFilteredProperties(filtered);
   };
 
-  // Buat Nota Otomatis
-  const handleCreateInvoice = (property: Property, buyerData: any, paymentData: any) => {
+  // Pemesanan & Cetak Nota ke Cloud Firestore
+  const handleCreateInvoice = async (property: Property, buyerData: any, paymentData: any) => {
     const finalBuyer = {
       name: buyerData?.name || currentUser?.fullName || 'Pembeli Terverifikasi',
       phone: buyerData?.phone || currentUser?.phone || '-',
@@ -478,8 +552,9 @@ export default function App() {
       nik: currentUser?.nik || '-'
     };
 
+    const trxId = `TRX-${Date.now()}`;
     const transaction: Transaction = {
-      id: `TRX-${Date.now()}`,
+      id: trxId,
       property,
       buyer: finalBuyer,
       date: new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }),
@@ -488,7 +563,8 @@ export default function App() {
       remaining: property.price - paymentData.downPayment,
       paymentMethod: paymentData.paymentMethod
     };
-    setTransactions([transaction, ...transactions]);
+
+    await setDoc(doc(db, 'transactions', trxId), transaction);
     navigateTo('invoice');
   };
 
@@ -498,7 +574,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
       <div className="w-full bg-white shadow-xl min-h-screen max-w-7xl flex flex-col">
 
-        {/* NAVBAR (Tersembunyi di Login & Register) */}
+        {/* NAVBAR */}
         {!isAuthPage && (
           <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
             <div className="px-4 py-3 flex items-center justify-between">
@@ -513,11 +589,11 @@ export default function App() {
                 />
                 <div>
                   <h1 className="font-bold text-blue-600 leading-tight text-base">Delons Clusters</h1>
-                  <p className="text-[10px] text-gray-500 font-medium">Platform Properti Lumion 3D</p>
+                  <p className="text-[10px] text-gray-500 font-medium">Platform Properti Lumion 3D (Cloud Sync)</p>
                 </div>
               </div>
 
-              {/* Desktop Navigation */}
+              {/* Desktop Menu */}
               <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
                 <button onClick={() => navigateTo('home')} className={`hover:text-blue-600 transition ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Home</button>
                 <button onClick={() => navigateTo('services')} className={`hover:text-blue-600 transition ${currentPage === 'services' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Layanan</button>
@@ -549,7 +625,7 @@ export default function App() {
                     variant="outline"
                     onClick={() => {
                       setCurrentUser(null);
-                      alert('Anda telah berhasil keluar.');
+                      alert('Anda telah logout.');
                       navigateTo('login');
                     }}
                     className="text-xs text-red-600 border-red-200 hover:bg-red-50"
@@ -575,7 +651,7 @@ export default function App() {
           </header>
         )}
 
-        {/* MAIN CONTENT VIEWPORT */}
+        {/* MAIN VIEWPORT */}
         <main className="p-4 md:p-6 flex-1 flex flex-col">
 
           {/* PAGE: HOME */}
@@ -610,7 +686,7 @@ export default function App() {
                 </div>
                 <div className="lg:col-span-3 space-y-4">
                   <div className="flex justify-between items-center text-sm text-gray-600 border-b pb-2">
-                    <p>Menampilkan <span className="font-semibold text-blue-600">{filteredProperties.length}</span> unit klaster 3D</p>
+                    <p>Menampilkan <span className="font-semibold text-blue-600">{filteredProperties.length}</span> unit klaster 3D (Cloud Sync)</p>
                   </div>
                   <PropertyList
                     properties={filteredProperties}
@@ -634,9 +710,9 @@ export default function App() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <ShieldCheck className="size-6 text-purple-600" /> Admin Control Dashboard
+                    <ShieldCheck className="size-6 text-purple-600" /> Admin Cloud Control Panel
                   </h2>
-                  <p className="text-xs text-gray-500">Kelola persetujuan verifikasi akun KTP user dan katalog properti 3D.</p>
+                  <p className="text-xs text-gray-500">Data tersinkronisasi langsung ke Firebase Firestore Database.</p>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -661,7 +737,7 @@ export default function App() {
               {/* TAB 1: VERIFIKASI USER */}
               {adminActiveTab === 'users' && (
                 <div className="space-y-4">
-                  <h3 className="font-bold text-gray-800 text-lg">Daftar Pengguna & Status Persetujuan (ACC)</h3>
+                  <h3 className="font-bold text-gray-800 text-lg">Daftar Pengguna Cloud Firestore & ACC Status</h3>
                   <div className="grid gap-4">
                     {users.map(u => (
                       <Card key={u.id} className="p-4 border shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -683,26 +759,24 @@ export default function App() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-600">
                             <p><span className="font-semibold">NIK:</span> {u.nik}</p>
                             <p><span className="font-semibold">Username:</span> {u.username}</p>
-                            <p><span className="font-semibold">Email:</span> {u.email}</p>
+                            <p><span className="font-semibold">Password:</span> <code className="bg-gray-100 px-1 rounded">{u.password}</code></p>
                             <p><span className="font-semibold">WhatsApp:</span> {u.phone}</p>
-                            <p><span className="font-semibold">Pekerjaan:</span> {u.occupation}</p>
+                            <p><span className="font-semibold">Email:</span> {u.email}</p>
                             <p className="sm:col-span-2"><span className="font-semibold">Alamat KTP:</span> {u.address}</p>
                           </div>
 
-                          {/* Preview 2 Foto (KTP + Wajah) */}
                           <div className="flex gap-4 pt-2">
                             <div>
                               <p className="text-[11px] font-semibold text-gray-500 mb-1">Foto Dokumen KTP:</p>
-                              <img src={u.ktpImage} alt="KTP" className="w-24 h-16 object-cover rounded-md border shadow-sm" />
+                              <img src={u.ktpImage} alt="KTP" className="w-24 h-16 object-cover rounded-md border shadow-sm bg-gray-100" />
                             </div>
                             <div>
                               <p className="text-[11px] font-semibold text-gray-500 mb-1">Foto Wajah Kamera:</p>
-                              <img src={u.faceImage} alt="Wajah" className="w-24 h-16 object-cover rounded-md border shadow-sm" />
+                              <img src={u.faceImage} alt="Wajah" className="w-24 h-16 object-cover rounded-md border shadow-sm bg-gray-100" />
                             </div>
                           </div>
                         </div>
 
-                        {/* Action Buttons */}
                         {u.role !== 'admin' && (
                           <div className="flex md:flex-col gap-2 w-full md:w-auto">
                             <Button
@@ -730,22 +804,22 @@ export default function App() {
                 </div>
               )}
 
-              {/* TAB 2: TAMBAH RUMAH 3D */}
+              {/* TAB 2: TAMBAH PROPERTI CLOUD */}
               {adminActiveTab === 'addProperty' && (
                 <Card className="max-w-2xl mx-auto p-6 shadow-sm">
                   <CardHeader className="p-0 mb-4">
-                    <CardTitle className="text-xl">Tambah Unit Rumah Pemodelan 3D</CardTitle>
-                    <p className="text-xs text-gray-500">Unit baru akan langsung ditampilkan di katalog utama platform.</p>
+                    <CardTitle className="text-xl">Tambah Unit Rumah Pemodelan 3D (Cloud Firestore)</CardTitle>
+                    <p className="text-xs text-gray-500">Data otomatis ter-upload ke Firestore dan sinkron di semua device.</p>
                   </CardHeader>
                   <form onSubmit={handleAddProperty} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold">Nama Unit Properti</label>
-                        <Input placeholder="Contoh: Cluster Grand Delons Tipe 45" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} required />
+                        <Input placeholder="Cluster Grand Delons Tipe 45" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} required />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold">Harga Jual (Rp)</label>
-                        <Input type="number" placeholder="2500000000" value={newPrice} onChange={(e) => setNewPrice(Number(e.target.value))} required />
+                        <Input type="number" value={newPrice} onChange={(e) => setNewPrice(Number(e.target.value))} required />
                       </div>
                     </div>
 
@@ -767,8 +841,8 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold">Path / URL Gambar 3D</label>
-                        <Input placeholder="/images/perumahanbanyak.jpeg" value={newImage} onChange={(e) => setNewImage(e.target.value)} required />
+                        <label className="text-xs font-semibold">Path Gambar 3D</label>
+                        <Input value={newImage} onChange={(e) => setNewImage(e.target.value)} required />
                       </div>
                     </div>
 
@@ -793,12 +867,12 @@ export default function App() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold">Fasilitas (Pisahkan dengan koma)</label>
+                      <label className="text-xs font-semibold">Fasilitas (Pisahkan koma)</label>
                       <Input placeholder="Smart Home, Carport, Private Pool, CCTV" value={newFeatures} onChange={(e) => setNewFeatures(e.target.value)} />
                     </div>
 
                     <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 font-semibold text-white">
-                      Publikasikan Unit ke Katalog Web
+                      Publikasikan Unit ke Cloud Firestore
                     </Button>
                   </form>
                 </CardContent>
@@ -832,7 +906,7 @@ export default function App() {
                           size="sm"
                           className="bg-blue-600 hover:bg-blue-700 text-xs"
                           onClick={() => {
-                            const msg = `Halo Admin Delons, saya atas nama ${currentUser?.fullName || 'Pengunjung'} ingin memesan layanan: ${s.title}`;
+                            const msg = `Halo Admin Delons, saya atas nama ${currentUser?.fullName || 'Pengunjung'} ingin konsultasi layanan: ${s.title}`;
                             window.open(`https://wa.me/6281331517717?text=${encodeURIComponent(msg)}`, '_blank');
                           }}
                         >
@@ -894,7 +968,7 @@ export default function App() {
             </div>
           )}
 
-          {/* PAGE: LOGIN (ISOLATED) */}
+          {/* PAGE: LOGIN */}
           {currentPage === 'login' && (
             <div
               className="flex-1 w-full min-h-[90vh] flex flex-col items-center justify-center py-10 px-4 bg-cover bg-center rounded-2xl"
@@ -908,14 +982,14 @@ export default function App() {
                     DC
                   </div>
                   <CardTitle className="text-2xl font-bold text-gray-900">Masuk ke Delons Clusters</CardTitle>
-                  <p className="text-xs text-gray-500">Portal Pemesanan Properti & Desain 3D</p>
+                  <p className="text-xs text-gray-500">Portal Pemesanan Properti 3D (Cloud Database)</p>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleLogin} className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-gray-700">Email atau Username</label>
                       <Input
-                        placeholder="Contoh: admin / dafi_buyer"
+                        placeholder="Contoh: admin / username anda"
                         value={loginIdentifier}
                         onChange={(e) => setLoginIdentifier(e.target.value)}
                       />
@@ -934,9 +1008,8 @@ export default function App() {
                     </Button>
 
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-900 space-y-1">
-                      <p className="font-bold flex items-center gap-1"><ShieldCheck className="size-3.5" /> Akun Demo Pengujian:</p>
-                      <p>• <b>Admin:</b> Username: <code className="bg-white px-1 py-0.5 rounded">admin</code> | Pass: <code className="bg-white px-1 py-0.5 rounded">admin123</code></p>
-                      <p>• <b>User (ACC):</b> Username: <code className="bg-white px-1 py-0.5 rounded">dafi_buyer</code> | Pass: <code className="bg-white px-1 py-0.5 rounded">user123</code></p>
+                      <p className="font-bold flex items-center gap-1"><ShieldCheck className="size-3.5" /> Akun Super Admin Cloud:</p>
+                      <p>• <b>Username:</b> <code className="bg-white px-1 py-0.5 rounded font-mono">admin</code> | PW: <code className="bg-white px-1 py-0.5 rounded font-mono">admin123</code></p>
                     </div>
 
                     <div className="flex justify-between items-center text-xs text-gray-600 pt-2 border-t">
@@ -944,7 +1017,7 @@ export default function App() {
                         ← Beranda
                       </button>
                       <span>
-                        Belum punya akun? <button type="button" onClick={() => navigateTo('register')} className="text-blue-600 font-bold hover:underline">Daftar Verifikasi KTP</button>
+                        Belum punya akun? <button type="button" onClick={() => navigateTo('register')} className="text-blue-600 font-bold hover:underline">Daftar Akun Baru</button>
                       </span>
                     </div>
                   </form>
@@ -953,7 +1026,7 @@ export default function App() {
             </div>
           )}
 
-          {/* PAGE: REGISTER (DUAL PHOTO & LIVE CAMERA CAPTURE) */}
+          {/* PAGE: REGISTER */}
           {currentPage === 'register' && (
             <div
               className="flex-1 w-full min-h-[90vh] flex items-center justify-center py-8 px-4 bg-cover bg-center rounded-2xl"
@@ -964,10 +1037,10 @@ export default function App() {
               <Card className="max-w-2xl w-full bg-white/95 backdrop-blur-md shadow-2xl border-0 p-2 my-4">
                 <CardHeader className="text-center space-y-1">
                   <div className="flex items-center justify-center gap-2 text-blue-600 font-semibold text-xs mb-1">
-                    <ShieldCheck className="size-4" /> Registrasi Akun Terverifikasi
+                    <ShieldCheck className="size-4" /> Registrasi Cloud Firestore
                   </div>
                   <CardTitle className="text-2xl font-bold text-gray-900">Formulir Identitas & Verifikasi Wajah</CardTitle>
-                  <p className="text-xs text-gray-500">Akun wajib di-ACC oleh Admin sebelum dapat digunakan untuk transaksi unit.</p>
+                  <p className="text-xs text-gray-500">Akun tersimpan ke Cloud Firestore & wajib di-ACC Admin sebelum login.</p>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleRegisterSubmit} className="space-y-4">
@@ -985,7 +1058,7 @@ export default function App() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-gray-700">Nomor Induk Kependudukan (NIK 16 Digit) *</label>
+                        <label className="text-xs font-semibold text-gray-700">Nomor NIK KTP (16 Digit) *</label>
                         <Input
                           placeholder="3201xxxxxxxxxxxx"
                           maxLength={16}
@@ -1001,7 +1074,7 @@ export default function App() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-gray-700">Alamat Email Aktif *</label>
+                        <label className="text-xs font-semibold text-gray-700">Email Aktif *</label>
                         <Input type="email" placeholder="dafi@gmail.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
                       </div>
                       <div className="space-y-1">
@@ -1015,14 +1088,12 @@ export default function App() {
                       <Input placeholder="Jl. Pemuda No. 45, RT 01/RW 02, Bandung" value={regAddress} onChange={(e) => setRegAddress(e.target.value)} />
                     </div>
 
-                    {/* DUAL PHOTO VERIFIKASI (KTP + KAMERA WAJAH) */}
+                    {/* DUAL PHOTO */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-
-                      {/* 1. FOTO KTP */}
                       <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 flex flex-col justify-between gap-2">
                         <div>
-                          <p className="text-xs font-bold text-gray-800">1. Foto Dokumen E-KTP *</p>
-                          <p className="text-[10px] text-gray-500">Ambil foto KTP asli atau upload file dokumen.</p>
+                          <p className="text-xs font-bold text-gray-800">1. Foto Dokumen KTP *</p>
+                          <p className="text-[10px] text-gray-500">Ambil foto KTP via kamera atau upload.</p>
                         </div>
                         {regKtpImage && (
                           <img src={regKtpImage} alt="Preview KTP" className="w-full h-24 object-cover rounded-lg border shadow-sm" />
@@ -1035,7 +1106,7 @@ export default function App() {
                             className="text-xs flex-1 gap-1"
                             onClick={() => startCamera('ktp')}
                           >
-                            <Camera className="size-3.5" /> Buka Kamera
+                            <Camera className="size-3.5" /> Kamera
                           </Button>
                           <label className="flex-1">
                             <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'ktp')} />
@@ -1046,11 +1117,10 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* 2. FOTO WAJAH LANGSUNG */}
                       <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 flex flex-col justify-between gap-2">
                         <div>
-                          <p className="text-xs font-bold text-gray-800">2. Foto Wajah Saat Ini (Selfie) *</p>
-                          <p className="text-[10px] text-gray-500">Wajib buka kamera untuk scan keaslian wajah.</p>
+                          <p className="text-xs font-bold text-gray-800">2. Foto Wajah Selfie *</p>
+                          <p className="text-[10px] text-gray-500">Buka kamera untuk scan keaslian wajah.</p>
                         </div>
                         {regFaceImage && (
                           <img src={regFaceImage} alt="Preview Wajah" className="w-full h-24 object-cover rounded-lg border shadow-sm" />
@@ -1062,7 +1132,7 @@ export default function App() {
                             className="text-xs flex-1 bg-blue-600 hover:bg-blue-700 text-white gap-1"
                             onClick={() => startCamera('face')}
                           >
-                            <Camera className="size-3.5" /> Buka Kamera
+                            <Camera className="size-3.5" /> Kamera
                           </Button>
                           <label className="flex-1">
                             <input type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => handleFileUpload(e, 'face')} />
@@ -1072,7 +1142,6 @@ export default function App() {
                           </label>
                         </div>
                       </div>
-
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1087,7 +1156,7 @@ export default function App() {
                     </div>
 
                     <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 font-semibold py-2.5 shadow-md">
-                      Kirim Formulir untuk Verifikasi Admin
+                      Kirim Pendaftaran ke Cloud Database
                     </Button>
 
                     <div className="flex justify-between items-center text-xs text-gray-600 pt-2 border-t">
@@ -1109,8 +1178,8 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b pb-4">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Arsip Nota & Riwayat Transaksi</h2>
-                  <p className="text-xs text-gray-500">Nota otomatis terbit saat Anda melakukan booking unit pada katalog properti.</p>
+                  <h2 className="text-2xl font-bold text-gray-900">Arsip Nota & Riwayat Transaksi (Cloud Sync)</h2>
+                  <p className="text-xs text-gray-500">Data transaksi tersimpan permanen di cloud server.</p>
                 </div>
                 <Button size="sm" onClick={() => navigateTo('home')} className="text-xs bg-gray-900 text-white">
                   + Pesan Unit Lain
@@ -1139,7 +1208,7 @@ export default function App() {
           )}
         </main>
 
-        {/* MODAL KAMERA LANGSUNG */}
+        {/* MODAL KAMERA */}
         {isCameraActive && (
           <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
             <Card className="max-w-lg w-full bg-white overflow-hidden shadow-2xl">
@@ -1154,7 +1223,7 @@ export default function App() {
                 <div className="aspect-video bg-black rounded-xl overflow-hidden relative shadow-inner">
                   <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                   <div className="absolute inset-0 border-2 border-dashed border-white/50 rounded-xl pointer-events-none flex items-center justify-center">
-                    <p className="text-white/70 text-xs bg-black/40 px-3 py-1 rounded-full">Posisikan objek di dalam kotak</p>
+                    <p className="text-white/70 text-xs bg-black/40 px-3 py-1 rounded-full">Posisikan di tengah kamera</p>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -1188,7 +1257,7 @@ export default function App() {
           />
         )}
 
-        {/* MOBILE BOTTOM NAVIGATION */}
+        {/* MOBILE NAVIGATION */}
         {!isAuthPage && isMobile && (
           <div className="sticky bottom-0 bg-white border-t flex justify-around py-2.5 px-2 z-30 text-[11px] shadow-lg md:hidden">
             <button onClick={() => navigateTo('home')} className={`flex flex-col items-center gap-1 ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
