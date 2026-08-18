@@ -6,8 +6,47 @@ import {
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 
-// Helper format tanggal universal (Aman untuk Firestore Timestamp, String, & Date object)
-const formatTanggalIndonesia = (rawDate) => {
+export interface InvoiceData {
+  id: string;
+  propertyId?: string;
+  propertyTitle?: string;
+  propertyLocation?: string;
+  propertyPrice?: number;
+  propertyArea?: number;
+  buyerName?: string;
+  buyerPhone?: string;
+  buyerEmail?: string;
+  buyerAddress?: string;
+  buyerNik?: string;
+  downPayment?: number;
+  paymentMethod?: string;
+  totalPrice?: number;
+  date?: any;
+  createdAt?: any;
+  buyer?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  };
+  property?: {
+    title?: string;
+    location?: string;
+    area?: number;
+    price?: number;
+  };
+  payment?: {
+    downPayment?: number;
+    paymentMethod?: string;
+  };
+}
+
+interface SalesInvoiceProps {
+  invoices?: InvoiceData[] | any[];
+  onBack?: () => void;
+}
+
+const formatTanggalIndonesia = (rawDate: any): string => {
   if (!rawDate) {
     return new Date().toLocaleDateString('id-ID', {
       day: 'numeric',
@@ -16,7 +55,6 @@ const formatTanggalIndonesia = (rawDate) => {
     });
   }
 
-  // Jika format Firestore Timestamp ({ seconds, nanoseconds })
   if (typeof rawDate === 'object' && rawDate.seconds !== undefined) {
     return new Date(rawDate.seconds * 1000).toLocaleDateString('id-ID', {
       day: 'numeric',
@@ -25,7 +63,6 @@ const formatTanggalIndonesia = (rawDate) => {
     });
   }
 
-  // Jika format ISO String atau JS Date
   const parsed = new Date(rawDate);
   if (!isNaN(parsed.getTime())) {
     return parsed.toLocaleDateString('id-ID', {
@@ -42,17 +79,18 @@ const formatTanggalIndonesia = (rawDate) => {
   });
 };
 
-export default function SalesInvoices({ invoices = [], onBack }) {
-  // Set default nota terpilih ke nota paling baru (indeks 0)
-  const [selectedId, setSelectedId] = useState(invoices[0]?.id || null);
+export default function SalesInvoice({ invoices = [], onBack }: SalesInvoiceProps) {
+  const invoiceList: InvoiceData[] = Array.isArray(invoices) ? (invoices as InvoiceData[]) : [];
+  const [selectedId, setSelectedId] = useState<string | null>(invoiceList[0]?.id || null);
 
-  const activeInvoice = invoices.find((inv) => inv.id === selectedId) || invoices[0];
+  const activeInvoice: InvoiceData | undefined =
+    invoiceList.find((inv: InvoiceData) => inv.id === selectedId) || invoiceList[0];
 
   const handlePrint = () => {
     window.print();
   };
 
-  if (!invoices || invoices.length === 0) {
+  if (invoiceList.length === 0) {
     return (
       <div className="bg-white rounded-2xl p-12 text-center border border-gray-200 shadow-sm max-w-xl mx-auto my-12">
         <FileText className="size-16 text-gray-300 mx-auto mb-4" />
@@ -68,6 +106,21 @@ export default function SalesInvoices({ invoices = [], onBack }) {
       </div>
     );
   }
+
+  const totalHarga = Number(
+    activeInvoice?.totalPrice ||
+    activeInvoice?.propertyPrice ||
+    activeInvoice?.property?.price ||
+    0
+  );
+
+  const totalDp = Number(
+    activeInvoice?.downPayment ||
+    activeInvoice?.payment?.downPayment ||
+    0
+  );
+
+  const sisaPelunasan = Math.max(0, totalHarga - totalDp);
 
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-6">
@@ -94,11 +147,11 @@ export default function SalesInvoices({ invoices = [], onBack }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-        {/* Kolom Kiri: Daftar Riwayat Nota (Tanpa tombol + Buat) */}
+        {/* Kolom Kiri: Riwayat Nota */}
         <div className="lg:col-span-4 bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3 print:hidden">
           <div className="flex items-center justify-between pb-2 border-b border-gray-100">
             <h4 className="font-bold text-xs uppercase tracking-wider text-gray-600">
-              Daftar Nota ({invoices.length})
+              Daftar Nota ({invoiceList.length})
             </h4>
             <Badge variant="outline" className="text-[10px] text-blue-600 bg-blue-50 border-blue-200 font-semibold">
               Sinkron Cloud
@@ -106,8 +159,8 @@ export default function SalesInvoices({ invoices = [], onBack }) {
           </div>
 
           <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-            {invoices.map((inv) => {
-              const isSelected = (inv.id === activeInvoice?.id);
+            {invoiceList.map((inv: InvoiceData) => {
+              const isSelected = (inv.id === (activeInvoice?.id || ''));
               return (
                 <div
                   key={inv.id}
@@ -139,7 +192,7 @@ export default function SalesInvoices({ invoices = [], onBack }) {
           </div>
         </div>
 
-        {/* Kolom Kanan: Lembar Fisik Nota (Ready to Print) */}
+        {/* Kolom Kanan: Lembar Fisik Nota */}
         <div className="lg:col-span-8 bg-white rounded-2xl p-6 md:p-8 border border-gray-200 shadow-md print:border-none print:shadow-none print:p-0">
 
           {/* Header Surat Nota */}
@@ -158,7 +211,7 @@ export default function SalesInvoices({ invoices = [], onBack }) {
             </p>
           </div>
 
-          {/* Nomor Nota & Status */}
+          {/* Nomor Registrasi */}
           <div className="grid grid-cols-2 gap-4 py-4 border-b border-gray-200 text-xs">
             <div>
               <p className="text-gray-500">Nomor Registrasi Nota:</p>
@@ -180,10 +233,8 @@ export default function SalesInvoices({ invoices = [], onBack }) {
             </div>
           </div>
 
-          {/* Grid Informasi Pembeli & Unit */}
+          {/* Data Pembeli & Data Unit */}
           <div className="grid md:grid-cols-2 gap-6 py-5 border-b border-gray-200 text-xs">
-
-            {/* Box Data Pembeli */}
             <div className="bg-gray-50/80 p-4 rounded-xl border border-gray-200 space-y-2">
               <div className="flex items-center gap-1.5 font-bold text-gray-900 pb-1 border-b border-gray-200">
                 <User className="size-4 text-blue-600" />
@@ -195,7 +246,6 @@ export default function SalesInvoices({ invoices = [], onBack }) {
               <p><span className="text-gray-500">Domisili KTP:</span> <strong className="text-gray-900">{activeInvoice?.buyerAddress || activeInvoice?.buyer?.address || '-'}</strong></p>
             </div>
 
-            {/* Box Data Properti */}
             <div className="bg-gray-50/80 p-4 rounded-xl border border-gray-200 space-y-2">
               <div className="flex items-center gap-1.5 font-bold text-gray-900 pb-1 border-b border-gray-200">
                 <Building2 className="size-4 text-blue-600" />
@@ -206,10 +256,9 @@ export default function SalesInvoices({ invoices = [], onBack }) {
               <p><span className="text-gray-500">Spesifikasi:</span> <strong className="text-gray-900">{activeInvoice?.propertyArea || activeInvoice?.property?.area || 120} m² (Visual 3D Verified)</strong></p>
               <p><span className="text-gray-500">Legalitas:</span> <strong className="text-emerald-700">SHM (Sertifikat Hak Milik)</strong></p>
             </div>
-
           </div>
 
-          {/* Rincian Finansial Tabel */}
+          {/* Rincian Finansial */}
           <div className="py-5 border-b border-gray-200">
             <table className="w-full text-xs">
               <thead>
@@ -222,32 +271,26 @@ export default function SalesInvoices({ invoices = [], onBack }) {
                 <tr>
                   <td className="py-2.5 text-gray-800">Total Harga Unit Properti</td>
                   <td className="py-2.5 text-right font-bold text-gray-900">
-                    Rp {Number(activeInvoice?.totalPrice || activeInvoice?.propertyPrice || activeInvoice?.property?.price || 0).toLocaleString('id-ID')}
+                    Rp {totalHarga.toLocaleString('id-ID')}
                   </td>
                 </tr>
                 <tr>
                   <td className="py-2.5 text-emerald-700 font-semibold">Uang Muka (Down Payment - DP) Terbayar</td>
                   <td className="py-2.5 text-right font-bold text-emerald-700">
-                    - Rp {Number(activeInvoice?.downPayment || activeInvoice?.payment?.downPayment || 0).toLocaleString('id-ID')}
+                    - Rp {totalDp.toLocaleString('id-ID')}
                   </td>
                 </tr>
                 <tr className="bg-blue-50/70 font-black text-sm">
                   <td className="p-3 text-blue-950">Sisa Pelunasan / Akad KPR</td>
                   <td className="p-3 text-right text-blue-600">
-                    Rp {Number(
-                      Math.max(
-                        0,
-                        (activeInvoice?.totalPrice || activeInvoice?.propertyPrice || activeInvoice?.property?.price || 0) -
-                        (activeInvoice?.downPayment || activeInvoice?.payment?.downPayment || 0)
-                      )
-                    ).toLocaleString('id-ID')}
+                    Rp {sisaPelunasan.toLocaleString('id-ID')}
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Tanda Tangan & Footer Pengesahan */}
+          {/* Tanda Tangan */}
           <div className="pt-6 grid grid-cols-2 gap-4 text-center text-xs">
             <div>
               <p className="text-gray-500">Diverifikasi oleh Sistem,</p>
@@ -257,11 +300,15 @@ export default function SalesInvoices({ invoices = [], onBack }) {
                   <ShieldCheck className="size-3" /> E-Signature Verified
                 </Badge>
               </div>
-              <p className="font-mono text-[10px] text-gray-400">Security Hash: {activeInvoice?.id?.slice(0, 16) || 'SEC-VERIFIED'}</p>
+              <p className="font-mono text-[10px] text-gray-400">
+                Security Hash: {activeInvoice?.id?.slice(0, 16) || 'SEC-VERIFIED'}
+              </p>
             </div>
             <div>
               <p className="text-gray-500">Pemilik / Pembeli Sah,</p>
-              <p className="font-bold text-gray-900 mt-0.5">{activeInvoice?.buyerName || activeInvoice?.buyer?.name || 'Pembeli'}</p>
+              <p className="font-bold text-gray-900 mt-0.5">
+                {activeInvoice?.buyerName || activeInvoice?.buyer?.name || 'Pembeli'}
+              </p>
               <div className="h-10"></div>
               <p className="font-bold text-gray-800 underline underline-offset-4">
                 ( {activeInvoice?.buyerName || activeInvoice?.buyer?.name || '.......................'} )
