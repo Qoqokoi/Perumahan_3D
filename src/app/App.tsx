@@ -4,9 +4,9 @@ import { PropertyFilters } from './components/PropertyFilters';
 import { PropertyDetail } from './components/PropertyDetail';
 import { SalesInvoice } from './components/SalesInvoice';
 import { useIsMobile } from './components/ui/use-mobile';
-import { 
-  Home, Search, FileText, User, LogIn, 
-  Video, Users, Building2, Phone, MessageCircle, Mail, MapPin, CheckCircle 
+import {
+  Home, Search, FileText, User, LogIn,
+  Video, Users, Building2, Phone, MessageCircle, Mail, MapPin, CheckCircle
 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -82,7 +82,7 @@ const mockProperties: Property[] = [
     bathrooms: 3,
     area: 300,
     type: 'apartment',
-    image: '/gambar_delon.jpeg',
+    image: '/images/rumah-delon.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
@@ -96,7 +96,7 @@ const mockProperties: Property[] = [
     bathrooms: 3,
     area: 300,
     type: 'apartment',
-    image: '/gambar_delon.jpeg',
+    image: '/images/rumah-delon.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
@@ -110,7 +110,7 @@ const mockProperties: Property[] = [
     bathrooms: 3,
     area: 300,
     type: 'villa',
-    image: '/gambar_dapi.jpeg',
+    image: '/images/rumah-dafi.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
@@ -124,7 +124,7 @@ const mockProperties: Property[] = [
     bathrooms: 3,
     area: 300,
     type: 'villa',
-    image: '/gambar_dapi.jpeg',
+    image: '/images/rumah-dafi.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
@@ -143,7 +143,7 @@ export default function App() {
 
   // Kalau belum login, arahkan default halaman ke 'login', kalau sudah bisa ke 'home'
   const [currentPage, setCurrentPage] = useState<'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services'>('login');
-  
+
   // Deteksi otomatis ukuran layar (Mobile atau Desktop)
   const isMobile = useIsMobile();
 
@@ -206,15 +206,15 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
       {/* Main Container */}
       <div className="w-full bg-white shadow-xl min-h-screen max-w-7xl">
-        
+
         {/* Header / Navbar */}
         <header className="bg-white border-b sticky top-0 z-20">
           <div className="px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => { if(isLoggedIn) setCurrentPage('home'); }}>
-              <img 
-                src="/logo_rumah kita.png" 
-                alt="Logo" 
-                className="w-8 h-8 object-contain rounded-md" 
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => { if (isLoggedIn) setCurrentPage('home'); }}>
+              <img
+                src="/images/logo-app.png"
+                alt="Logo"
+                className="w-8 h-8 object-contain rounded-md"
               />
               <div>
                 <h1 className="font-bold text-blue-600 leading-tight">Delons Poenya</h1>
@@ -235,11 +235,11 @@ export default function App() {
 
                 {/* Navigasi Kanan */}
                 <div className="flex items-center gap-2">
-                  <Button 
-                    size="sm" 
+                  <Button
+                    size="sm"
                     className="text-xs bg-green-600 hover:bg-green-700 text-white gap-1"
                     onClick={() => {
-                      const phoneNumber = "6281331517717"; 
+                      const phoneNumber = "6281331517717";
                       const message = "Halo Admin Delons Clusters, saya ingin konsultasi dan tanya seputar properti 3D Lumion.";
                       window.open(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`, '_blank');
                     }}
@@ -248,23 +248,23 @@ export default function App() {
                   </Button>
 
                   {isLoggedIn ? (
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => {
                         setIsLoggedIn(false);
                         setCurrentPage('login');
                         alert('Anda telah berhasil Logout.');
-                      }} 
+                      }}
                       className="text-xs text-red-600 border-red-200 hover:bg-red-50"
                     >
                       <LogIn className="size-3 mr-1 rotate-180" /> Logout
                     </Button>
                   ) : (
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => setCurrentPage('login')} 
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setCurrentPage('login')}
                       className="text-xs"
                     >
                       <LogIn className="size-3 mr-1" /> Login
@@ -282,15 +282,15 @@ export default function App() {
 
         {/* Content Pages */}
         <main className="p-4">
-          
+
           {currentPage === 'home' && (
             <div className="space-y-6">
               {/* Hero Section */}
               {/* Hero Section dengan Background Gambar */}
-              <div 
+              <div
                 className="relative rounded-2xl overflow-hidden text-white p-6 md:p-10 shadow-lg bg-cover bg-center"
-                style={{ 
-                  backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('/getersamping_bawah.jpeg')` 
+                style={{
+                  backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('/images/geter-unida.jpeg')`
                 }}
               >
                 {/* Lapisan hitam transparan (overlay) di atas ditambahkan agar teks putihnya tetap terbaca jelas */}
@@ -315,8 +315,8 @@ export default function App() {
                   <div className="flex justify-between items-center text-sm text-gray-600">
                     <p>Menampilkan {filteredProperties.length} properti unggulan</p>
                   </div>
-                  <PropertyList 
-                    properties={filteredProperties} 
+                  <PropertyList
+                    properties={filteredProperties}
                     onSelectProperty={setSelectedProperty}
                   />
                 </div>
@@ -359,9 +359,9 @@ export default function App() {
                 <p className="text-sm text-gray-600">Video hasil rendering animasi 3D perumahan kelompok kami.</p>
               </div>
               <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-lg flex items-center justify-center relative">
-                <iframe 
+                <iframe
                   className="w-full h-full"
-                  src="https://www.youtube.com/embed/ng_r31w8AuQ?si=kEFJEdsp4sDV86zm" 
+                  src="https://www.youtube.com/embed/ng_r31w8AuQ?si=kEFJEdsp4sDV86zm"
                   title="Video Lumion 3D"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
@@ -381,9 +381,9 @@ export default function App() {
               {/* 3 Anggota Tim dengan Foto Asli */}
               <div className="grid md:grid-cols-3 gap-6">
                 {[
-                  { name: 'Fathurrahman Naufal', nim: '452024611064', role: 'Project Manager & Fullstack', desc: 'Bertanggung jawab atas arsitektur sistem web dan integrasi React.', img: '/logo_fathur.jpeg' },
-                  { name: 'Naufal Aqila', nim: '442024611', role: '3D & Lumion Specialist', desc: 'Membuat pemodelan objek 3D rumah dan rendering video Lumion.', img: '/gambar_delon.jpeg' },
-                  { name: 'M. Davi Al Haq', nim: '452024611', role: 'UI/UX Designer', desc: 'Merancang layout antarmuka website dan mobile design figma.', img: '/logo_dapi.jpeg' },
+                  { name: 'Fathurrahman Naufal', nim: '452024611064', role: 'Project Manager & Fullstack', desc: 'Bertanggung jawab atas arsitektur sistem web dan integrasi React.', img: '/images/rumah-fathur.jpeg' },
+                  { name: 'Naufal Aqila', nim: '442024611', role: '3D & Lumion Specialist', desc: 'Membuat pemodelan objek 3D rumah dan rendering video Lumion.', img: '/images/rumah-delon.jpeg' },
+                  { name: 'M. Davi Al Haq', nim: '452024611', role: 'UI/UX Designer', desc: 'Merancang layout antarmuka website dan mobile design figma.', img: '/images/rumah-dafi.jpeg' },
                 ].map((member, idx) => (
                   <Card key={idx} className="text-center p-4">
                     <div className="w-20 h-20 rounded-full mx-auto mb-3 overflow-hidden border-2 border-blue-600 shadow-md">
@@ -400,15 +400,15 @@ export default function App() {
           )}
 
           {currentPage === 'login' && (
-            <div 
+            <div
               className="w-full min-h-[85vh] flex flex-col items-center justify-center py-10 px-4 bg-cover bg-center rounded-2xl my-2 gap-6"
-              style={{ 
-                backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('/perumahanbanyak.jpeg')` 
+              style={{
+                backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('/images/perumahan-1.jpeg')`
               }}
             >
               {/* EFEK TEKS 3D Keren & Elegan */}
               <div className="text-center space-y-1">
-                <h2 
+                <h2
                   className="text-2xl md:text-4xl font-black tracking-wider text-amber-400 uppercase"
                   style={{
                     textShadow: '0 1px 0 #ccc, 0 2px 0 #c9c9c9, 0 3px 0 #bbb, 0 4px 0 #b9b9b9, 0 5px 0 #aaa, 0 6px 1px rgba(0,0,0,.1), 0 0 5px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.3), 0 3px 5px rgba(0,0,0,.2), 0 5px 10px rgba(0,0,0,.25), 0 10px 10px rgba(0,0,0,.2), 0 20px 20px rgba(0,0,0,.15)'
@@ -416,7 +416,7 @@ export default function App() {
                 >
                   SELAMAT DATANG
                 </h2>
-                <h3 
+                <h3
                   className="text-xl md:text-3xl font-bold tracking-widest text-white uppercase"
                   style={{
                     textShadow: '0 2px 4px rgba(0,0,0,0.8), 0 4px 12px rgba(0,0,0,0.6)'
@@ -440,16 +440,16 @@ export default function App() {
                     <label className="text-xs font-medium">Password</label>
                     <Input type="password" placeholder="Masukkan password..." value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
                   </div>
-                  <Button 
-                    className="w-full bg-blue-600 hover:bg-blue-700" 
-                    onClick={() => { 
+                  <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700"
+                    onClick={() => {
                       if (!loginEmail || !loginPassword) {
                         alert('Silakan masukkan email dan password terlebih dahulu!');
                         return;
                       }
-                      setIsLoggedIn(true); 
-                      setCurrentPage('home'); 
-                      alert('Login Berhasil! Selamat datang di RumahKu 3D.'); 
+                      setIsLoggedIn(true);
+                      setCurrentPage('home');
+                      alert('Login Berhasil! Selamat datang di RumahKu 3D.');
                     }}
                   >
                     Login
@@ -491,7 +491,7 @@ export default function App() {
           )}
 
           {currentPage === 'invoice' && (
-            <SalesInvoice 
+            <SalesInvoice
               transactions={transactions}
               onCreateInvoice={handleCreateInvoice}
               properties={properties}
@@ -501,8 +501,8 @@ export default function App() {
 
         {/* Property Detail Modal */}
         {selectedProperty && (
-          <PropertyDetail 
-            property={selectedProperty} 
+          <PropertyDetail
+            property={selectedProperty}
             onClose={() => setSelectedProperty(null)}
             onPurchase={(buyerData, paymentData) => {
               handleCreateInvoice(selectedProperty, buyerData, paymentData);
@@ -539,7 +539,7 @@ export default function App() {
         )}
       </div>
     </div>
-    
+
   );
-  
+
 }
