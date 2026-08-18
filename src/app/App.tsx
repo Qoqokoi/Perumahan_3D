@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PropertyList } from './components/PropertyList';
 import { PropertyFilters } from './components/PropertyFilters';
 import { PropertyDetail } from './components/PropertyDetail';
@@ -6,7 +6,8 @@ import { SalesInvoice } from './components/SalesInvoice';
 import { useIsMobile } from './components/ui/use-mobile';
 import {
   Home, FileText, LogIn,
-  Video, Users, Building2, MessageCircle, ShieldCheck, UploadCloud, CheckCircle2
+  Video, Users, Building2, MessageCircle, ShieldCheck,
+  Camera, CheckCircle2, XCircle, PlusCircle, UserCheck, ShieldAlert, RefreshCw
 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -28,7 +29,8 @@ export interface Property {
   yearBuilt: number;
 }
 
-export interface UserProfile {
+export interface UserAccount {
+  id: string;
   fullName: string;
   username: string;
   email: string;
@@ -36,7 +38,12 @@ export interface UserProfile {
   nik: string;
   address: string;
   occupation: string;
-  isKtpVerified: boolean;
+  ktpImage: string;
+  faceImage: string;
+  status: 'pending' | 'approved' | 'rejected';
+  role: 'user' | 'admin';
+  password: string;
+  registeredAt: string;
 }
 
 export interface Transaction {
@@ -56,7 +63,7 @@ export interface Transaction {
   paymentMethod: string;
 }
 
-const mockProperties: Property[] = [
+const initialProperties: Property[] = [
   {
     id: '1',
     title: 'Cluster Modern Delons Prime',
@@ -143,17 +150,25 @@ const mockProperties: Property[] = [
   }
 ];
 
-type PageType = 'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services';
-
-export default function App() {
-  const [properties] = useState<Property[]>(mockProperties);
-  const [filteredProperties, setFilteredProperties] = useState<Property[]>(mockProperties);
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-
-  // Auth & Profile State (Default mock user jika langsung login)
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<UserProfile>({
+const initialUsers: UserAccount[] = [
+  {
+    id: 'USR-ADMIN',
+    fullName: 'Super Administrator',
+    username: 'admin',
+    email: 'admin@delons.com',
+    phone: '081331517717',
+    nik: '3200000000000001',
+    address: 'Kantor Pusat Delons Clusters',
+    occupation: 'Head Administrator',
+    ktpImage: '/images/gambar_delon.jpeg',
+    faceImage: '/images/gambar_delon.jpeg',
+    status: 'approved',
+    role: 'admin',
+    password: 'admin123',
+    registeredAt: '2024-01-01'
+  },
+  {
+    id: 'USR-001',
     fullName: 'Muhammad Dafi Al Haq',
     username: 'dafi_buyer',
     email: 'dafi@gmail.com',
@@ -161,13 +176,67 @@ export default function App() {
     nik: '3201123456780001',
     address: 'Jl. Pemuda No. 45, Bandung',
     occupation: 'Software Engineer',
-    isKtpVerified: true
-  });
+    ktpImage: '/images/gambar_dapi.jpeg',
+    faceImage: '/images/gambar_dapi.jpeg',
+    status: 'approved',
+    role: 'user',
+    password: 'user123',
+    registeredAt: '2024-05-10'
+  }
+];
 
+type PageType = 'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services' | 'admin';
+
+export default function App() {
+  const [properties, setProperties] = useState<Property[]>(initialProperties);
+  const [filteredProperties, setFilteredProperties] = useState<Property[]>(initialProperties);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [users, setUsers] = useState<UserAccount[]>(initialUsers);
+
+  // State Session Auth
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [currentPage, setCurrentPage] = useState<PageType>('home');
+  const [adminActiveTab, setAdminActiveTab] = useState<'users' | 'addProperty'>('users');
+
   const isMobile = useIsMobile();
 
-  // 1. Integrasi History API untuk Browser Back / Forward Button
+  // State Form Login
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
+  // State Form Register
+  const [regFullName, setRegFullName] = useState('');
+  const [regUsername, setRegUsername] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regNik, setRegNik] = useState('');
+  const [regAddress, setRegAddress] = useState('');
+  const [regOccupation, setRegOccupation] = useState('');
+  const [regKtpImage, setRegKtpImage] = useState<string>('');
+  const [regFaceImage, setRegFaceImage] = useState<string>('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+
+  // State Kamera Langsung (Webcam Modal)
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState<'ktp' | 'face' | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  // State Form Tambah Properti (Admin)
+  const [newTitle, setNewTitle] = useState('');
+  const [newPrice, setNewPrice] = useState<number>(2000000000);
+  const [newLocation, setNewLocation] = useState('');
+  const [newBedrooms, setNewBedrooms] = useState<number>(3);
+  const [newBathrooms, setNewBathrooms] = useState<number>(2);
+  const [newArea, setNewArea] = useState<number>(150);
+  const [newType, setNewType] = useState<'house' | 'apartment' | 'villa'>('house');
+  const [newImage, setNewImage] = useState('/images/perumahanbanyak.jpeg');
+  const [newDesc, setNewDesc] = useState('');
+  const [newFeatures, setNewFeatures] = useState('Smart Home, Garasi 2 Mobil, Keamanan 24 Jam');
+
+  // Navigation History Sync
   const navigateTo = (page: PageType, replace = false) => {
     if (page === currentPage) return;
     if (replace) {
@@ -180,9 +249,8 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Sinkronisasi state awal hash
     const currentHash = window.location.hash.replace('#', '') as PageType;
-    if (currentHash && ['home', 'invoice', 'login', 'register', 'video', 'about', 'services'].includes(currentHash)) {
+    if (currentHash && ['home', 'invoice', 'login', 'register', 'video', 'about', 'services', 'admin'].includes(currentHash)) {
       setCurrentPage(currentHash);
     } else {
       window.history.replaceState({ page: 'home' }, '', '#home');
@@ -201,21 +269,182 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Form State Login
-  const [loginIdentifier, setLoginIdentifier] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  // Handler Kamera Langsung
+  const startCamera = async (target: 'ktp' | 'face') => {
+    setCameraTarget(target);
+    setIsCameraActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: target === 'face' ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      alert('Gagal mengakses kamera. Pastikan izin kamera telah diaktifkan di browser.');
+      setIsCameraActive(false);
+    }
+  };
 
-  // Form State Register (Lengkap Standar Verifikasi Properti / KPR)
-  const [regFullName, setRegFullName] = useState('');
-  const [regUsername, setRegUsername] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPhone, setRegPhone] = useState('');
-  const [regNik, setRegNik] = useState('');
-  const [regAddress, setRegAddress] = useState('');
-  const [regOccupation, setRegOccupation] = useState('');
-  const [regKtpUploaded, setRegKtpUploaded] = useState(false);
-  const [regPassword, setRegPassword] = useState('');
-  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg');
+      if (cameraTarget === 'ktp') setRegKtpImage(dataUrl);
+      if (cameraTarget === 'face') setRegFaceImage(dataUrl);
+    }
+    stopCamera();
+  };
+
+  const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+    setIsCameraActive(false);
+    setCameraTarget(null);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'ktp' | 'face') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (target === 'ktp') setRegKtpImage(reader.result as string);
+        if (target === 'face') setRegFaceImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Login Validator
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginIdentifier || !loginPassword) {
+      alert('Silakan masukkan Username/Email dan Password!');
+      return;
+    }
+
+    const foundUser = users.find(
+      u => (u.username.toLowerCase() === loginIdentifier.toLowerCase() || u.email.toLowerCase() === loginIdentifier.toLowerCase()) && u.password === loginPassword
+    );
+
+    if (!foundUser) {
+      alert('Kredensial tidak valid! Periksa kembali username dan password Anda.');
+      return;
+    }
+
+    // Cek Role Admin
+    if (foundUser.role === 'admin') {
+      setCurrentUser(foundUser);
+      alert('Selamat datang, Admin! Mengarahkan ke Control Panel.');
+      navigateTo('admin');
+      return;
+    }
+
+    // Cek Status Approval User
+    if (foundUser.status === 'pending') {
+      alert('AKUN BELUM DI-ACC ADMIN!\n\nIdentitas KTP & Wajah Anda sedang dalam antrean verifikasi Admin. Silakan tunggu hingga status disetujui.');
+      return;
+    }
+
+    if (foundUser.status === 'rejected') {
+      alert('AKUN DITOLAK!\n\nVerifikasi KTP atau Wajah Anda tidak sesuai standar. Silakan hubungi Admin atau lakukan registrasi ulang.');
+      return;
+    }
+
+    setCurrentUser(foundUser);
+    alert(`Login Berhasil! Selamat datang di Delons Clusters, ${foundUser.fullName}.`);
+    navigateTo('home');
+  };
+
+  // Register Submit
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regFullName || !regUsername || !regEmail || !regPhone || !regNik || !regAddress || !regPassword || !regConfirmPassword) {
+      alert('Wajib melengkapi semua formulir identitas!');
+      return;
+    }
+    if (regNik.length !== 16) {
+      alert('Format NIK KTP wajib 16 digit angka!');
+      return;
+    }
+    if (!regKtpImage || !regFaceImage) {
+      alert('Wajib melampirkan 2 Foto: Foto Dokumen KTP dan Foto Wajah Asli!');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      alert('Konfirmasi Password tidak sesuai!');
+      return;
+    }
+
+    const newUser: UserAccount = {
+      id: `USR-${Date.now()}`,
+      fullName: regFullName,
+      username: regUsername,
+      email: regEmail,
+      phone: regPhone,
+      nik: regNik,
+      address: regAddress,
+      occupation: regOccupation || 'Wiraswasta / Profesional',
+      ktpImage: regKtpImage,
+      faceImage: regFaceImage,
+      status: 'pending', // Wajib di-ACC Admin
+      role: 'user',
+      password: regPassword,
+      registeredAt: new Date().toISOString().split('T')[0]
+    };
+
+    setUsers([...users, newUser]);
+    alert('REGISTRASI BERHASIL DISUBMIT!\n\nAkun Anda telah masuk ke antrean verifikasi Admin. Akun baru bisa digunakan untuk login setelah disetujui (di-ACC) oleh Admin.');
+    navigateTo('login');
+  };
+
+  // Admin Actions: Approve / Reject User
+  const handleUserStatusUpdate = (userId: string, newStatus: 'approved' | 'rejected') => {
+    setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
+    alert(`Status pengguna berhasil diubah menjadi: ${newStatus.toUpperCase()}`);
+  };
+
+  // Admin Actions: Tambah Rumah 3D
+  const handleAddProperty = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle || !newLocation || !newDesc) {
+      alert('Mohon lengkapi judul, lokasi, dan deskripsi properti!');
+      return;
+    }
+
+    const newProp: Property = {
+      id: `PROP-${Date.now()}`,
+      title: newTitle,
+      price: Number(newPrice),
+      location: newLocation,
+      bedrooms: Number(newBedrooms),
+      bathrooms: Number(newBathrooms),
+      area: Number(newArea),
+      type: newType,
+      image: newImage,
+      description: newDesc,
+      features: newFeatures.split(',').map(f => f.trim()),
+      yearBuilt: new Date().getFullYear()
+    };
+
+    const updated = [newProp, ...properties];
+    setProperties(updated);
+    setFilteredProperties(updated);
+    alert(`Properti "${newTitle}" berhasil ditambahkan ke katalog utama!`);
+    setNewTitle('');
+    setNewDesc('');
+    setAdminActiveTab('users');
+  };
 
   const filterProperties = ({
     priceRange,
@@ -239,14 +468,14 @@ export default function App() {
     setFilteredProperties(filtered);
   };
 
-  // Auto-Generated Invoice dari Pemesanan Properti
+  // Buat Nota Otomatis
   const handleCreateInvoice = (property: Property, buyerData: any, paymentData: any) => {
     const finalBuyer = {
-      name: buyerData?.name || currentUser.fullName,
-      phone: buyerData?.phone || currentUser.phone,
-      email: buyerData?.email || currentUser.email,
-      address: buyerData?.address || currentUser.address,
-      nik: currentUser.nik
+      name: buyerData?.name || currentUser?.fullName || 'Pembeli Terverifikasi',
+      phone: buyerData?.phone || currentUser?.phone || '-',
+      email: buyerData?.email || currentUser?.email || '-',
+      address: buyerData?.address || currentUser?.address || '-',
+      nik: currentUser?.nik || '-'
     };
 
     const transaction: Transaction = {
@@ -263,52 +492,13 @@ export default function App() {
     navigateTo('invoice');
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!regFullName || !regUsername || !regEmail || !regPhone || !regNik || !regAddress || !regPassword || !regConfirmPassword) {
-      alert('Wajib melengkapi semua formulir identitas KTP & Kontak!');
-      return;
-    }
-    if (regNik.length !== 16) {
-      alert('Format NIK KTP wajib 16 digit angka!');
-      return;
-    }
-    if (regPassword !== regConfirmPassword) {
-      alert('Konfirmasi Password tidak sesuai!');
-      return;
-    }
-
-    // Set user profile & otomatis auto-login
-    const newUser: UserProfile = {
-      fullName: regFullName,
-      username: regUsername,
-      email: regEmail,
-      phone: regPhone,
-      nik: regNik,
-      address: regAddress,
-      occupation: regOccupation || 'Wiraswasta / Profesional',
-      isKtpVerified: regKtpUploaded
-    };
-
-    setCurrentUser(newUser);
-    setIsLoggedIn(true);
-    alert(`Registrasi Berhasil! Identitas atas nama ${newUser.fullName} telah tersinkronisasi.`);
-    navigateTo('home');
-  };
-
-  const handleServiceOrder = (serviceTitle: string) => {
-    const message = `Halo Admin Delons Clusters, saya atas nama *${currentUser.fullName}* (${currentUser.phone}) ingin konsultasi dan pemesanan layanan *${serviceTitle}*. Mohon info prosedurnya.`;
-    window.open(`https://wa.me/6281331517717?text=${encodeURIComponent(message)}`, '_blank');
-  };
-
-  // Cek apakah di halaman auth (Login/Register)
   const isAuthPage = currentPage === 'login' || currentPage === 'register';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
       <div className="w-full bg-white shadow-xl min-h-screen max-w-7xl flex flex-col">
 
-        {/* 2. NAVBAR HANYA MUNCUL DI LUAR HALAMAN LOGIN & REGISTER */}
+        {/* NAVBAR (Tersembunyi di Login & Register) */}
         {!isAuthPage && (
           <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
             <div className="px-4 py-3 flex items-center justify-between">
@@ -333,6 +523,11 @@ export default function App() {
                 <button onClick={() => navigateTo('services')} className={`hover:text-blue-600 transition ${currentPage === 'services' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Layanan</button>
                 <button onClick={() => navigateTo('video')} className={`hover:text-blue-600 transition ${currentPage === 'video' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Video Lumion</button>
                 <button onClick={() => navigateTo('about')} className={`hover:text-blue-600 transition ${currentPage === 'about' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Tentang Kami</button>
+                {currentUser?.role === 'admin' && (
+                  <button onClick={() => navigateTo('admin')} className={`text-purple-600 font-bold flex items-center gap-1 ${currentPage === 'admin' ? 'underline' : ''}`}>
+                    <ShieldCheck className="size-4" /> Admin Panel
+                  </button>
+                )}
               </nav>
 
               {/* Action Buttons */}
@@ -340,23 +535,26 @@ export default function App() {
                 <Button
                   size="sm"
                   className="text-xs bg-green-600 hover:bg-green-700 text-white gap-1"
-                  onClick={() => handleServiceOrder("Konsultasi Umum Properti 3D")}
+                  onClick={() => {
+                    const msg = `Halo Admin Delons Clusters, saya ingin konsultasi unit properti 3D Lumion.`;
+                    window.open(`https://wa.me/6281331517717?text=${encodeURIComponent(msg)}`, '_blank');
+                  }}
                 >
                   <MessageCircle className="size-3.5" /> <span className="hidden sm:inline">Chat Admin</span>
                 </Button>
 
-                {isLoggedIn ? (
+                {currentUser ? (
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      setIsLoggedIn(false);
-                      alert('Anda telah berhasil keluar dari akun.');
+                      setCurrentUser(null);
+                      alert('Anda telah berhasil keluar.');
                       navigateTo('login');
                     }}
                     className="text-xs text-red-600 border-red-200 hover:bg-red-50"
                   >
-                    <LogIn className="size-3.5 mr-1 rotate-180" /> Logout ({currentUser.username})
+                    <LogIn className="size-3.5 mr-1 rotate-180" /> Keluar ({currentUser.username})
                   </Button>
                 ) : (
                   <Button
@@ -377,13 +575,12 @@ export default function App() {
           </header>
         )}
 
-        {/* Main Content */}
+        {/* MAIN CONTENT VIEWPORT */}
         <main className="p-4 md:p-6 flex-1 flex flex-col">
 
           {/* PAGE: HOME */}
           {currentPage === 'home' && (
             <div className="space-y-6">
-              {/* Hero Banner */}
               <div
                 className="relative rounded-2xl overflow-hidden text-white p-6 md:p-10 shadow-lg bg-cover bg-center"
                 style={{
@@ -407,7 +604,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Property Filter & List Grid */}
               <div className="grid lg:grid-cols-4 gap-6">
                 <div className="lg:col-span-1">
                   <PropertyFilters onFilterChange={filterProperties} />
@@ -419,8 +615,8 @@ export default function App() {
                   <PropertyList
                     properties={filteredProperties}
                     onSelectProperty={(prop) => {
-                      if (!isLoggedIn) {
-                        alert('Silakan Masuk / Registrasi terlebih dahulu untuk melihat detail dan transaksi unit!');
+                      if (!currentUser) {
+                        alert('Silakan Masuk / Registrasi terlebih dahulu untuk memesan properti!');
                         navigateTo('login');
                         return;
                       }
@@ -432,7 +628,185 @@ export default function App() {
             </div>
           )}
 
-          {/* PAGE: SERVICES (Layanan Sekarang Bisa Diklik & Langsung Reservasi) */}
+          {/* PAGE: ADMIN PANEL */}
+          {currentPage === 'admin' && (
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <ShieldCheck className="size-6 text-purple-600" /> Admin Control Dashboard
+                  </h2>
+                  <p className="text-xs text-gray-500">Kelola persetujuan verifikasi akun KTP user dan katalog properti 3D.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={adminActiveTab === 'users' ? 'default' : 'outline'}
+                    onClick={() => setAdminActiveTab('users')}
+                    className={adminActiveTab === 'users' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                  >
+                    <UserCheck className="size-4 mr-1" /> Verifikasi User ({users.filter(u => u.status === 'pending').length} Pending)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={adminActiveTab === 'addProperty' ? 'default' : 'outline'}
+                    onClick={() => setAdminActiveTab('addProperty')}
+                    className={adminActiveTab === 'addProperty' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                  >
+                    <PlusCircle className="size-4 mr-1" /> Tambah Rumah 3D
+                  </Button>
+                </div>
+              </div>
+
+              {/* TAB 1: VERIFIKASI USER */}
+              {adminActiveTab === 'users' && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-gray-800 text-lg">Daftar Pengguna & Status Persetujuan (ACC)</h3>
+                  <div className="grid gap-4">
+                    {users.map(u => (
+                      <Card key={u.id} className="p-4 border shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div className="space-y-2 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900 text-base">{u.fullName}</span>
+                            <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="text-[10px]">
+                              {u.role.toUpperCase()}
+                            </Badge>
+                            <Badge
+                              className={`text-[10px] ${u.status === 'approved' ? 'bg-green-100 text-green-800 border-green-300' :
+                                  u.status === 'pending' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                                    'bg-red-100 text-red-800 border-red-300'
+                                }`}
+                            >
+                              {u.status === 'approved' ? 'TERVERIFIKASI (ACC)' : u.status === 'pending' ? 'MENUNGGU ACC' : 'DITOLAK'}
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-600">
+                            <p><span className="font-semibold">NIK:</span> {u.nik}</p>
+                            <p><span className="font-semibold">Username:</span> {u.username}</p>
+                            <p><span className="font-semibold">Email:</span> {u.email}</p>
+                            <p><span className="font-semibold">WhatsApp:</span> {u.phone}</p>
+                            <p><span className="font-semibold">Pekerjaan:</span> {u.occupation}</p>
+                            <p className="sm:col-span-2"><span className="font-semibold">Alamat KTP:</span> {u.address}</p>
+                          </div>
+
+                          {/* Preview 2 Foto (KTP + Wajah) */}
+                          <div className="flex gap-4 pt-2">
+                            <div>
+                              <p className="text-[11px] font-semibold text-gray-500 mb-1">Foto Dokumen KTP:</p>
+                              <img src={u.ktpImage} alt="KTP" className="w-24 h-16 object-cover rounded-md border shadow-sm" />
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-semibold text-gray-500 mb-1">Foto Wajah Kamera:</p>
+                              <img src={u.faceImage} alt="Wajah" className="w-24 h-16 object-cover rounded-md border shadow-sm" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        {u.role !== 'admin' && (
+                          <div className="flex md:flex-col gap-2 w-full md:w-auto">
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-xs w-full"
+                              disabled={u.status === 'approved'}
+                              onClick={() => handleUserStatusUpdate(u.id, 'approved')}
+                            >
+                              <CheckCircle2 className="size-3.5 mr-1" /> ACC Akun
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 border-red-300 hover:bg-red-50 text-xs w-full"
+                              disabled={u.status === 'rejected'}
+                              onClick={() => handleUserStatusUpdate(u.id, 'rejected')}
+                            >
+                              <XCircle className="size-3.5 mr-1" /> Tolak
+                            </Button>
+                          </div>
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: TAMBAH RUMAH 3D */}
+              {adminActiveTab === 'addProperty' && (
+                <Card className="max-w-2xl mx-auto p-6 shadow-sm">
+                  <CardHeader className="p-0 mb-4">
+                    <CardTitle className="text-xl">Tambah Unit Rumah Pemodelan 3D</CardTitle>
+                    <p className="text-xs text-gray-500">Unit baru akan langsung ditampilkan di katalog utama platform.</p>
+                  </CardHeader>
+                  <form onSubmit={handleAddProperty} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Nama Unit Properti</label>
+                        <Input placeholder="Contoh: Cluster Grand Delons Tipe 45" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} required />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Harga Jual (Rp)</label>
+                        <Input type="number" placeholder="2500000000" value={newPrice} onChange={(e) => setNewPrice(Number(e.target.value))} required />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Lokasi Kota</label>
+                        <Input placeholder="Bandung / Surabaya" value={newLocation} onChange={(e) => setNewLocation(e.target.value)} required />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Tipe Unit</label>
+                        <select
+                          className="w-full p-2 border rounded-md text-xs bg-white"
+                          value={newType}
+                          onChange={(e: any) => setNewType(e.target.value)}
+                        >
+                          <option value="house">House (Rumah)</option>
+                          <option value="villa">Villa Eksklusif</option>
+                          <option value="apartment">Apartemen Modern</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Path / URL Gambar 3D</label>
+                        <Input placeholder="/images/perumahanbanyak.jpeg" value={newImage} onChange={(e) => setNewImage(e.target.value)} required />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Kamar Tidur</label>
+                        <Input type="number" value={newBedrooms} onChange={(e) => setNewBedrooms(Number(e.target.value))} required />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Kamar Mandi</label>
+                        <Input type="number" value={newBathrooms} onChange={(e) => setNewBathrooms(Number(e.target.value))} required />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold">Luas Bangunan (m²)</label>
+                        <Input type="number" value={newArea} onChange={(e) => setNewArea(Number(e.target.value))} required />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold">Deskripsi Arsitektur 3D</label>
+                      <Input placeholder="Visualisasi fasad modern dengan tata cahaya Lumion..." value={newDesc} onChange={(e) => setNewDesc(e.target.value)} required />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold">Fasilitas (Pisahkan dengan koma)</label>
+                      <Input placeholder="Smart Home, Carport, Private Pool, CCTV" value={newFeatures} onChange={(e) => setNewFeatures(e.target.value)} />
+                    </div>
+
+                    <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 font-semibold text-white">
+                      Publikasikan Unit ke Katalog Web
+                    </Button>
+                  </form>
+                </CardContent>
+              )}
+            </div>
+          )}
+
+          {/* PAGE: SERVICES */}
           {currentPage === 'services' && (
             <div className="space-y-6 max-w-4xl mx-auto py-4">
               <div className="text-center space-y-2">
@@ -457,7 +831,10 @@ export default function App() {
                         <Button
                           size="sm"
                           className="bg-blue-600 hover:bg-blue-700 text-xs"
-                          onClick={() => handleServiceOrder(s.title)}
+                          onClick={() => {
+                            const msg = `Halo Admin Delons, saya atas nama ${currentUser?.fullName || 'Pengunjung'} ingin memesan layanan: ${s.title}`;
+                            window.open(`https://wa.me/6281331517717?text=${encodeURIComponent(msg)}`, '_blank');
+                          }}
                         >
                           Pilih Layanan
                         </Button>
@@ -517,7 +894,7 @@ export default function App() {
             </div>
           )}
 
-          {/* PAGE: LOGIN (ISOLATED VIEW / NO NAVBAR) */}
+          {/* PAGE: LOGIN (ISOLATED) */}
           {currentPage === 'login' && (
             <div
               className="flex-1 w-full min-h-[90vh] flex flex-col items-center justify-center py-10 px-4 bg-cover bg-center rounded-2xl"
@@ -533,53 +910,50 @@ export default function App() {
                   <CardTitle className="text-2xl font-bold text-gray-900">Masuk ke Delons Clusters</CardTitle>
                   <p className="text-xs text-gray-500">Portal Pemesanan Properti & Desain 3D</p>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-gray-700">Email atau Username</label>
-                    <Input
-                      placeholder="Masukkan email / username..."
-                      value={loginIdentifier}
-                      onChange={(e) => setLoginIdentifier(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-gray-700">Password</label>
-                    <Input
-                      type="password"
-                      placeholder="Masukkan password..."
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                    />
-                  </div>
-                  <Button
-                    className="w-full bg-blue-600 hover:bg-blue-700 mt-2 font-medium"
-                    onClick={() => {
-                      if (!loginIdentifier || !loginPassword) {
-                        alert('Silakan isi email/username dan password!');
-                        return;
-                      }
-                      setIsLoggedIn(true);
-                      alert(`Login Berhasil! Selamat datang kembali, ${currentUser.fullName}.`);
-                      navigateTo('home');
-                    }}
-                  >
-                    Masuk Sekarang
-                  </Button>
+                <CardContent>
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-700">Email atau Username</label>
+                      <Input
+                        placeholder="Contoh: admin / dafi_buyer"
+                        value={loginIdentifier}
+                        onChange={(e) => setLoginIdentifier(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-gray-700">Password</label>
+                      <Input
+                        type="password"
+                        placeholder="Masukkan password..."
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                      />
+                    </div>
+                    <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 font-medium py-2.5 shadow-md">
+                      Masuk ke Sistem
+                    </Button>
 
-                  <div className="flex justify-between items-center text-xs text-gray-600 pt-2 border-t">
-                    <button onClick={() => navigateTo('home')} className="text-gray-500 hover:text-gray-800">
-                      ← Kembali ke Beranda
-                    </button>
-                    <span>
-                      Belum punya akun? <button onClick={() => navigateTo('register')} className="text-blue-600 font-bold hover:underline">Daftar KTP</button>
-                    </span>
-                  </div>
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-900 space-y-1">
+                      <p className="font-bold flex items-center gap-1"><ShieldCheck className="size-3.5" /> Akun Demo Pengujian:</p>
+                      <p>• <b>Admin:</b> Username: <code className="bg-white px-1 py-0.5 rounded">admin</code> | Pass: <code className="bg-white px-1 py-0.5 rounded">admin123</code></p>
+                      <p>• <b>User (ACC):</b> Username: <code className="bg-white px-1 py-0.5 rounded">dafi_buyer</code> | Pass: <code className="bg-white px-1 py-0.5 rounded">user123</code></p>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs text-gray-600 pt-2 border-t">
+                      <button type="button" onClick={() => navigateTo('home')} className="text-gray-500 hover:text-gray-800">
+                        ← Beranda
+                      </button>
+                      <span>
+                        Belum punya akun? <button type="button" onClick={() => navigateTo('register')} className="text-blue-600 font-bold hover:underline">Daftar Verifikasi KTP</button>
+                      </span>
+                    </div>
+                  </form>
                 </CardContent>
               </Card>
             </div>
           )}
 
-          {/* PAGE: REGISTER (VERIFIKASI LENGKAP: NIK, ALAMAT, PEKERJAAN, KTP) */}
+          {/* PAGE: REGISTER (DUAL PHOTO & LIVE CAMERA CAPTURE) */}
           {currentPage === 'register' && (
             <div
               className="flex-1 w-full min-h-[90vh] flex items-center justify-center py-8 px-4 bg-cover bg-center rounded-2xl"
@@ -592,13 +966,12 @@ export default function App() {
                   <div className="flex items-center justify-center gap-2 text-blue-600 font-semibold text-xs mb-1">
                     <ShieldCheck className="size-4" /> Registrasi Akun Terverifikasi
                   </div>
-                  <CardTitle className="text-2xl font-bold text-gray-900">Formulir Identitas Pembeli Properti</CardTitle>
-                  <p className="text-xs text-gray-500">Data terintegrasi otomatis dengan nota transaksi KPR / Pembelian Unit</p>
+                  <CardTitle className="text-2xl font-bold text-gray-900">Formulir Identitas & Verifikasi Wajah</CardTitle>
+                  <p className="text-xs text-gray-500">Akun wajib di-ACC oleh Admin sebelum dapat digunakan untuk transaksi unit.</p>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleRegisterSubmit} className="space-y-4">
 
-                    {/* Baris 1: Nama & Username */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700">Nama Lengkap (Sesuai KTP) *</label>
@@ -606,11 +979,10 @@ export default function App() {
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700">Username Akun *</label>
-                        <Input placeholder="dafi_alhaq" value={regUsername} onChange={(e) => setRegUsername(e.target.value)} />
+                        <Input placeholder="dafi_buyer" value={regUsername} onChange={(e) => setRegUsername(e.target.value)} />
                       </div>
                     </div>
 
-                    {/* Baris 2: NIK KTP & Pekerjaan */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700">Nomor Induk Kependudukan (NIK 16 Digit) *</label>
@@ -623,15 +995,14 @@ export default function App() {
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700">Profesi / Pekerjaan</label>
-                        <Input placeholder="PNS / Pegawai Swasta / Wiraswasta" value={regOccupation} onChange={(e) => setRegOccupation(e.target.value)} />
+                        <Input placeholder="Software Engineer / Swasta" value={regOccupation} onChange={(e) => setRegOccupation(e.target.value)} />
                       </div>
                     </div>
 
-                    {/* Baris 3: Email & Telepon */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700">Alamat Email Aktif *</label>
-                        <Input type="email" placeholder="nama@gmail.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
+                        <Input type="email" placeholder="dafi@gmail.com" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700">Nomor WhatsApp / HP *</label>
@@ -639,55 +1010,89 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Baris 4: Alamat Domisili KTP */}
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-gray-700">Alamat Lengkap Domisili KTP *</label>
-                      <Input placeholder="Jl. Sudirman No. 12, RT 01/RW 04, Kelurahan, Kecamatan, Kota" value={regAddress} onChange={(e) => setRegAddress(e.target.value)} />
+                      <label className="text-xs font-semibold text-gray-700">Alamat Domisili KTP *</label>
+                      <Input placeholder="Jl. Pemuda No. 45, RT 01/RW 02, Bandung" value={regAddress} onChange={(e) => setRegAddress(e.target.value)} />
                     </div>
 
-                    {/* Baris 5: Simulasi Scan/Upload KTP */}
-                    <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
-                          <UploadCloud className="size-5" />
-                        </div>
+                    {/* DUAL PHOTO VERIFIKASI (KTP + KAMERA WAJAH) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+
+                      {/* 1. FOTO KTP */}
+                      <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 flex flex-col justify-between gap-2">
                         <div>
-                          <p className="text-xs font-semibold text-gray-800">Verifikasi Dokumen E-KTP / Wajah</p>
-                          <p className="text-[10px] text-gray-500">Upload foto KTP asli untuk validasi nota transaksi hukum</p>
+                          <p className="text-xs font-bold text-gray-800">1. Foto Dokumen E-KTP *</p>
+                          <p className="text-[10px] text-gray-500">Ambil foto KTP asli atau upload file dokumen.</p>
+                        </div>
+                        {regKtpImage && (
+                          <img src={regKtpImage} alt="Preview KTP" className="w-full h-24 object-cover rounded-lg border shadow-sm" />
+                        )}
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="text-xs flex-1 gap-1"
+                            onClick={() => startCamera('ktp')}
+                          >
+                            <Camera className="size-3.5" /> Buka Kamera
+                          </Button>
+                          <label className="flex-1">
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'ktp')} />
+                            <div className="h-9 px-3 rounded-md border border-gray-300 bg-white hover:bg-gray-100 flex items-center justify-center text-xs font-medium cursor-pointer">
+                              Upload
+                            </div>
+                          </label>
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={regKtpUploaded ? "secondary" : "outline"}
-                        className={`text-xs ${regKtpUploaded ? 'text-green-700 bg-green-100 border-green-300' : ''}`}
-                        onClick={() => setRegKtpUploaded(!regKtpUploaded)}
-                      >
-                        {regKtpUploaded ? (
-                          <span className="flex items-center gap-1"><CheckCircle2 className="size-3.5" /> Terupload</span>
-                        ) : 'Pilih File'}
-                      </Button>
+
+                      {/* 2. FOTO WAJAH LANGSUNG */}
+                      <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 flex flex-col justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold text-gray-800">2. Foto Wajah Saat Ini (Selfie) *</p>
+                          <p className="text-[10px] text-gray-500">Wajib buka kamera untuk scan keaslian wajah.</p>
+                        </div>
+                        {regFaceImage && (
+                          <img src={regFaceImage} alt="Preview Wajah" className="w-full h-24 object-cover rounded-lg border shadow-sm" />
+                        )}
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="text-xs flex-1 bg-blue-600 hover:bg-blue-700 text-white gap-1"
+                            onClick={() => startCamera('face')}
+                          >
+                            <Camera className="size-3.5" /> Buka Kamera
+                          </Button>
+                          <label className="flex-1">
+                            <input type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => handleFileUpload(e, 'face')} />
+                            <div className="h-9 px-3 rounded-md border border-gray-300 bg-white hover:bg-gray-100 flex items-center justify-center text-xs font-medium cursor-pointer">
+                              Upload
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
                     </div>
 
-                    {/* Baris 6: Password & Confirm */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-gray-700">Kata Sandi *</label>
+                        <label className="text-xs font-semibold text-gray-700">Password *</label>
                         <Input type="password" placeholder="Minimal 8 karakter..." value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-gray-700">Ulangi Kata Sandi *</label>
-                        <Input type="password" placeholder="Konfirmasi kata sandi..." value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} />
+                        <label className="text-xs font-semibold text-gray-700">Konfirmasi Password *</label>
+                        <Input type="password" placeholder="Ulangi password..." value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} />
                       </div>
                     </div>
 
                     <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 font-semibold py-2.5 shadow-md">
-                      Daftar & Verifikasi Akun Pembeli
+                      Kirim Formulir untuk Verifikasi Admin
                     </Button>
 
                     <div className="flex justify-between items-center text-xs text-gray-600 pt-2 border-t">
                       <button type="button" onClick={() => navigateTo('home')} className="text-gray-500 hover:text-gray-800">
-                        ← Kembali ke Beranda
+                        ← Beranda
                       </button>
                       <span>
                         Sudah punya akun? <button type="button" onClick={() => navigateTo('login')} className="text-blue-600 font-bold hover:underline">Masuk</button>
@@ -699,7 +1104,7 @@ export default function App() {
             </div>
           )}
 
-          {/* PAGE: INVOICE (Otomatis Menampilkan Transaksi Pemesanan Properti) */}
+          {/* PAGE: INVOICE */}
           {currentPage === 'invoice' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b pb-4">
@@ -734,18 +1139,48 @@ export default function App() {
           )}
         </main>
 
-        {/* Modal Detail Properti (Auto-Fill Data Pembeli dari State Profil Terdaftar) */}
+        {/* MODAL KAMERA LANGSUNG */}
+        {isCameraActive && (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+            <Card className="max-w-lg w-full bg-white overflow-hidden shadow-2xl">
+              <CardHeader className="bg-gray-900 text-white py-3 px-4 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <Camera className="size-4 text-blue-400" />
+                  Ambil {cameraTarget === 'ktp' ? 'Foto Dokumen KTP' : 'Foto Wajah Saat Ini'}
+                </CardTitle>
+                <button onClick={stopCamera} className="text-gray-400 hover:text-white font-bold text-lg">&times;</button>
+              </CardHeader>
+              <CardContent className="p-4 space-y-4 text-center">
+                <div className="aspect-video bg-black rounded-xl overflow-hidden relative shadow-inner">
+                  <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 border-2 border-dashed border-white/50 rounded-xl pointer-events-none flex items-center justify-center">
+                    <p className="text-white/70 text-xs bg-black/40 px-3 py-1 rounded-full">Posisikan objek di dalam kotak</p>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1 text-xs" onClick={stopCamera}>
+                    Batal
+                  </Button>
+                  <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold gap-1" onClick={capturePhoto}>
+                    <Camera className="size-4" /> Jepret Foto
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* MODAL DETAIL PROPERTI */}
         {selectedProperty && (
           <PropertyDetail
             property={selectedProperty}
             onClose={() => setSelectedProperty(null)}
             onPurchase={(buyerData, paymentData) => {
-              // Otomatis pakai data akun yang sedang login jika form kosong
               const payloadBuyer = {
-                name: buyerData?.name || currentUser.fullName,
-                phone: buyerData?.phone || currentUser.phone,
-                email: buyerData?.email || currentUser.email,
-                address: buyerData?.address || currentUser.address,
+                name: buyerData?.name || currentUser?.fullName || '',
+                phone: buyerData?.phone || currentUser?.phone || '',
+                email: buyerData?.email || currentUser?.email || '',
+                address: buyerData?.address || currentUser?.address || '',
               };
               handleCreateInvoice(selectedProperty, payloadBuyer, paymentData);
               setSelectedProperty(null);
@@ -753,29 +1188,36 @@ export default function App() {
           />
         )}
 
-        {/* Mobile Bottom Navigation (Hanya Muncul Jika Bukan di Halaman Auth) */}
+        {/* MOBILE BOTTOM NAVIGATION */}
         {!isAuthPage && isMobile && (
-          <div className="sticky bottom-0 bg-white border-t flex justify-around py-2 px-1 z-30 text-xs shadow-lg md:hidden">
-            <button onClick={() => navigateTo('home')} className={`flex flex-col items-center ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
-              <Home className="size-5" />
+          <div className="sticky bottom-0 bg-white border-t flex justify-around py-2.5 px-2 z-30 text-[11px] shadow-lg md:hidden">
+            <button onClick={() => navigateTo('home')} className={`flex flex-col items-center gap-1 ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+              <Home className="size-4" />
               <span>Home</span>
             </button>
-            <button onClick={() => navigateTo('services')} className={`flex flex-col items-center ${currentPage === 'services' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
-              <Building2 className="size-5" />
+            <button onClick={() => navigateTo('services')} className={`flex flex-col items-center gap-1 ${currentPage === 'services' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+              <Building2 className="size-4" />
               <span>Layanan</span>
             </button>
-            <button onClick={() => navigateTo('video')} className={`flex flex-col items-center ${currentPage === 'video' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
-              <Video className="size-5" />
+            <button onClick={() => navigateTo('video')} className={`flex flex-col items-center gap-1 ${currentPage === 'video' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+              <Video className="size-4" />
               <span>Video</span>
             </button>
-            <button onClick={() => navigateTo('about')} className={`flex flex-col items-center ${currentPage === 'about' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
-              <Users className="size-5" />
+            <button onClick={() => navigateTo('about')} className={`flex flex-col items-center gap-1 ${currentPage === 'about' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+              <Users className="size-4" />
               <span>Tim</span>
             </button>
-            <button onClick={() => navigateTo('invoice')} className={`flex flex-col items-center ${currentPage === 'invoice' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
-              <FileText className="size-5" />
-              <span>Nota</span>
-            </button>
+            {currentUser?.role === 'admin' ? (
+              <button onClick={() => navigateTo('admin')} className={`flex flex-col items-center gap-1 ${currentPage === 'admin' ? 'text-purple-600 font-bold' : 'text-purple-500'}`}>
+                <ShieldCheck className="size-4" />
+                <span>Admin</span>
+              </button>
+            ) : (
+              <button onClick={() => navigateTo('invoice')} className={`flex flex-col items-center gap-1 ${currentPage === 'invoice' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+                <FileText className="size-4" />
+                <span>Nota</span>
+              </button>
+            )}
           </div>
         )}
       </div>
