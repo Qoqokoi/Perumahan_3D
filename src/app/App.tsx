@@ -749,8 +749,8 @@ export default function App() {
                             </Badge>
                             <Badge
                               className={`text-[10px] ${u.status === 'approved' ? 'bg-green-100 text-green-800 border-green-300' :
-                                  u.status === 'pending' ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                                    'bg-red-100 text-red-800 border-red-300'
+                                u.status === 'pending' ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                                  'bg-red-100 text-red-800 border-red-300'
                                 }`}
                             >
                               {u.status === 'approved' ? 'TERVERIFIKASI (ACC)' : u.status === 'pending' ? 'MENUNGGU ACC' : 'DITOLAK'}
@@ -1243,6 +1243,7 @@ export default function App() {
         {selectedProperty && (
           <PropertyDetail
             property={selectedProperty}
+            currentUser={currentUser}
             onClose={() => setSelectedProperty(null)}
             onPurchase={(buyerData, paymentData) => {
               const payloadBuyer = {
