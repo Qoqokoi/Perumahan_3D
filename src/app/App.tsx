@@ -1,449 +1,620 @@
-    );
+import React, { useState, useEffect } from 'react';
+import { db } from '../lib/firebase';
+import {
+  collection, onSnapshot, doc, setDoc, updateDoc, serverTimestamp
+} from 'firebase/firestore';
+import {
+  Building2, FileText, UserCheck, ShieldCheck,
+  LogIn, LogOut, Plus, Trash2, Check, X
+} from 'lucide-react';
+import { Button } from './components/ui/button';
+import { Input } from './components/ui/input';
+import { Badge } from './components/ui/badge';
 
-if (!foundUser) {
-  alert('Kredensial tidak valid! Username atau Password salah.');
-  return;
+// Menggunakan Komponen Asli Proyek
+import { PropertyList } from './components/PropertyList';
+import { PropertyFilters } from './components/PropertyFilters';
+import { PropertyDetail } from './components/PropertyDetail';
+import SalesInvoice from './components/SalesInvoice';
+import { KTPScanner } from './components/KTPScanner';
+
+export interface Property {
+  id: string;
+  title: string;
+  price: number;
+  location: string;
+  bedrooms: number;
+  bathrooms: number;
+  area: number;
+  yearBuilt: number;
+  image: string;
+  description: string;
+  features: string[];
 }
 
-if (foundUser.role === 'admin') {
-  setCurrentUser(foundUser);
-  setLoginIdentifier('');
-  setLoginPassword('');
-  alert('Selamat datang, Admin! Mengarahkan ke Control Panel.');
-  navigateTo('admin');
-  return;
+export interface UserAccount {
+  id: string;
+  username: string;
+  password?: string;
+  fullName: string;
+  phone: string;
+  email: string;
+  address: string;
+  nik: string;
+  role: 'admin' | 'user';
+  status: 'approved' | 'pending' | 'rejected';
+  ktpImage?: string;
+  selfieImage?: string;
+  createdAt?: any;
 }
 
-if (foundUser.status === 'pending') {
-  alert('AKUN BELUM DI-ACC ADMIN!\n\nIdentitas Anda sedang diverifikasi di cloud database. Silakan hubungi Admin atau tunggu ACC.');
-  return;
+export interface Invoice {
+  id: string;
+  propertyId: string;
+  propertyTitle: string;
+  propertyLocation: string;
+  propertyPrice: number;
+  propertyArea: number;
+  buyerName: string;
+  buyerPhone: string;
+  buyerEmail: string;
+  buyerAddress: string;
+  buyerNik: string;
+  downPayment: number;
+  paymentMethod: string;
+  totalPrice: number;
+  date: any;
+  createdAt?: any;
 }
 
-if (foundUser.status === 'rejected') {
-  alert('AKUN DITOLAK!\n\nDokumen verifikasi Anda ditolak oleh Admin.');
-  return;
-}
+const defaultProperties: Property[] = [
+  {
+    id: 'PROP-01',
+    title: 'Cluster Modern Delons Prime',
+    price: 2500000000,
+    location: 'Jakarta Selatan',
+    bedrooms: 4,
+    bathrooms: 3,
+    area: 250,
+    yearBuilt: 2026,
+    image: '/images/perumahanbanyak.jpeg',
+    description: 'Rumah modern minimalis dengan tata ruang efisien dan visualisasi pencahayaan Lumion 3D.',
+    features: ['Smart Home', 'Kolam Renang Privat', 'Security 24 Jam', 'Carport 2 Mobil']
+  },
+  {
+    id: 'PROP-02',
+    title: 'Cluster Minimalis Delon',
+    price: 1850000000,
+    location: 'Surabaya',
+    bedrooms: 3,
+    bathrooms: 2,
+    area: 180,
+    yearBuilt: 2026,
+    image: '/images/perumahanbanyak.jpeg',
+    description: 'Hunian kompak modern dengan pemodelan presisi eksterior dan interior Lumion.',
+    features: ['Inner Garden', 'Solar Water Heater', 'One Gate System']
+  },
+  {
+    id: 'PROP-03',
+    title: 'Villa Panorama Delons',
+    price: 3200000000,
+    location: 'Jember',
+    bedrooms: 4,
+    bathrooms: 3,
+    area: 300,
+    yearBuilt: 2026,
+    image: '/images/perumahanbanyak.jpeg',
+    description: 'Villa eksklusif dengan view perbukitan hasil simulasi walkthrough 3D.',
+    features: ['Balkon Luas', 'Private Jacuzzi', 'Underground Cable']
+  }
+];
 
-setCurrentUser(foundUser);
-setLoginIdentifier('');
-setLoginPassword('');
-alert(`Selamat datang di Delons Clusters, ${foundUser.fullName}!`);
-navigateTo('home');
+export default function App() {
+  const [activeTab, setActiveTab] = useState<'catalogue' | 'invoices' | 'admin' | 'register'>('catalogue');
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
+
+  // Firestore Realtime States
+  const [properties, setProperties] = useState<Property[]>(defaultProperties);
+  const [filteredProperties, setFilteredProperties] = useState<Property[]>(defaultProperties);
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+
+  // Filter States
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedLocation, setSelectedLocation] = useState<string>('all');
+  const [priceRange, setPriceRange] = useState<number>(5000000000);
+
+  // Login Form States
+  const [loginUsername, setLoginUsername] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [loginError, setLoginError] = useState<string>('');
+
+  // Register Form States
+  const [regFullName, setRegFullName] = useState<string>('');
+  const [regNik, setRegNik] = useState<string>('');
+  const [regPhone, setRegPhone] = useState<string>('');
+  const [regEmail, setRegEmail] = useState<string>('');
+  const [regAddress, setRegAddress] = useState<string>('');
+  const [regUsername, setRegUsername] = useState<string>('');
+  const [regPassword, setRegPassword] = useState<string>('');
+  const [ktpImage, setKtpImage] = useState<string>('');
+  const [selfieImage, setSelfieImage] = useState<string>('');
+
+  // 1. SINKRONISASI FIRESTORE
+  useEffect(() => {
+    const unsubProps = onSnapshot(collection(db, 'properties'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: Property[] = [];
+        snapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() } as Property));
+        setProperties(loaded);
+      } else {
+        defaultProperties.forEach(async (p) => {
+          await setDoc(doc(db, 'properties', p.id), p);
+        });
+      }
+    });
+
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const loaded: UserAccount[] = [];
+      snapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() } as UserAccount));
+      setUsers(loaded);
+
+      if (!loaded.some((u) => u.username === 'admin')) {
+        setDoc(doc(db, 'users', 'USR-ADMIN'), {
+          id: 'USR-ADMIN',
+          username: 'admin',
+          password: 'admin123',
+          fullName: 'Delon Administrator',
+          phone: '081234567890',
+          email: 'admin@delonclusters.com',
+          address: 'Headquarter Delon Clusters, Ponorogo',
+          nik: '3502000000000001',
+          role: 'admin',
+          status: 'approved',
+          createdAt: serverTimestamp()
+        });
+      }
+    });
+
+    const unsubInvoices = onSnapshot(collection(db, 'invoices'), (snapshot) => {
+      const loaded: Invoice[] = [];
+      snapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() } as Invoice));
+      setInvoices(loaded.reverse());
+    });
+
+    return () => {
+      unsubProps();
+      unsubUsers();
+      unsubInvoices();
+    };
+  }, []);
+
+  // 2. FILTER LOGIC
+  useEffect(() => {
+    let result = properties;
+    if (searchQuery) {
+      result = result.filter((p) =>
+        p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.location.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    if (selectedLocation !== 'all') {
+      result = result.filter((p) => p.location.toLowerCase().includes(selectedLocation.toLowerCase()));
+    }
+    result = result.filter((p) => p.price <= priceRange);
+    setFilteredProperties(result);
+  }, [properties, searchQuery, selectedLocation, priceRange]);
+
+  // 3. AUTH & FLOW HANDLERS
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+
+    const foundUser = users.find((u) => u.username === loginUsername && u.password === loginPassword);
+    if (!foundUser) {
+      setLoginError('Kredensial tidak valid! Username atau Password salah.');
+      return;
+    }
+
+    if (foundUser.role === 'admin') {
+      setCurrentUser(foundUser);
+      setShowLoginModal(false);
+      setLoginUsername('');
+      setLoginPassword('');
+      setActiveTab('admin');
+      return;
+    }
+
+    if (foundUser.status === 'pending') {
+      setLoginError('AKUN BELUM DI-ACC ADMIN! Identitas Anda sedang diverifikasi di cloud database.');
+      return;
+    }
+
+    if (foundUser.status === 'rejected') {
+      setLoginError('AKUN DITOLAK! Dokumen verifikasi Anda ditolak oleh Admin.');
+      return;
+    }
+
+    setCurrentUser(foundUser);
+    setShowLoginModal(false);
+    setLoginUsername('');
+    setLoginPassword('');
+    setActiveTab('catalogue');
   };
 
-// Register ke Cloud Firestore
-const handleRegisterSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!regFullName || !regUsername || !regEmail || !regPhone || !regNik || !regAddress || !regPassword || !regConfirmPassword) {
-    alert('Wajib mengisi seluruh data pendaftaran!');
-    return;
-  }
-  if (regNik.length !== 16) {
-    alert('Format NIK KTP wajib 16 digit!');
-    return;
-  }
-  if (!regKtpImage || !regFaceImage) {
-    alert('Wajib melampirkan Foto KTP dan Foto Wajah Kamera!');
-    return;
-  }
-  if (regPassword !== regConfirmPassword) {
-    alert('Password dan Konfirmasi tidak cocok!');
-    return;
-  }
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regFullName || !regUsername || !regEmail || !regPhone || !regNik || !regAddress || !regPassword) {
+      alert('Wajib mengisi seluruh data pendaftaran!');
+      return;
+    }
 
-  if (users.some(u => u.username.toLowerCase() === regUsername.toLowerCase())) {
-    alert('Username sudah terdaftar! Gunakan username lain.');
-    return;
-  }
+    if (!ktpImage || !selfieImage) {
+      alert('Wajib mengambil foto E-KTP dan foto wajah!');
+      return;
+    }
 
-  const newUserId = `USR-${Date.now()}`;
-  const newUser: UserAccount = {
-    id: newUserId,
-    fullName: regFullName,
-    username: regUsername,
-    email: regEmail,
-    phone: regPhone,
-    nik: regNik,
-    address: regAddress,
-    occupation: regOccupation || 'Wiraswasta / Profesional',
-    ktpImage: regKtpImage,
-    faceImage: regFaceImage,
-    status: 'pending',
-    role: 'user',
-    password: regPassword,
-    registeredAt: new Date().toISOString().split('T')[0]
+    const newId = `USR-${Date.now().toString().slice(-6)}`;
+    const newAccount: UserAccount = {
+      id: newId,
+      username: regUsername.trim().toLowerCase(),
+      password: regPassword,
+      fullName: regFullName.trim(),
+      phone: regPhone.trim(),
+      email: regEmail.trim(),
+      address: regAddress.trim(),
+      nik: regNik.trim(),
+      role: 'user',
+      status: 'pending',
+      ktpImage,
+      selfieImage,
+      createdAt: serverTimestamp()
+    };
+
+    try {
+      await setDoc(doc(db, 'users', newId), newAccount);
+      alert('Pendaftaran Berhasil! Akun Anda menunggu verifikasi admin.');
+      setRegFullName('');
+      setRegNik('');
+      setRegPhone('');
+      setRegEmail('');
+      setRegAddress('');
+      setRegUsername('');
+      setRegPassword('');
+      setKtpImage('');
+      setSelfieImage('');
+      setActiveTab('catalogue');
+    } catch (err: any) {
+      alert('Gagal registrasi: ' + err.message);
+    }
   };
 
-  try {
-    await setDoc(doc(db, 'users', newUserId), newUser);
-    alert('PENDAFTARAN BERHASIL DISIMPAN KE CLOUD!\n\nAkun Anda telah masuk ke Database Cloud Firebase dengan status PENDING.');
+  const handlePurchase = async (buyerData: any, paymentData: any) => {
+    if (!selectedProperty) return;
 
-    setRegFullName('');
-    setRegUsername('');
-    setRegEmail('');
-    setRegPhone('');
-    setRegNik('');
-    setRegAddress('');
-    setRegKtpImage('');
-    setRegFaceImage('');
-    setRegPassword('');
-    setRegConfirmPassword('');
+    const invoiceId = `INV-DELONS-${Date.now().toString().slice(-6)}`;
+    const newInvoice: Invoice = {
+      id: invoiceId,
+      propertyId: selectedProperty.id,
+      propertyTitle: selectedProperty.title,
+      propertyLocation: selectedProperty.location,
+      propertyPrice: selectedProperty.price,
+      propertyArea: selectedProperty.area,
+      buyerName: buyerData.name,
+      buyerPhone: buyerData.phone,
+      buyerEmail: buyerData.email,
+      buyerAddress: buyerData.address,
+      buyerNik: buyerData.nik,
+      downPayment: paymentData.downPayment,
+      paymentMethod: paymentData.paymentMethod,
+      totalPrice: selectedProperty.price,
+      date: new Date().toISOString(),
+      createdAt: serverTimestamp()
+    };
 
-    navigateTo('login');
-  } catch (err) {
-    alert('Gagal menyimpan data ke Firestore. Pastikan Firestore rules dalam Test Mode.');
-  }
-};
-
-// Admin ACC/Reject via Firestore Update
-const handleUserStatusUpdate = async (userId: string, newStatus: 'approved' | 'rejected') => {
-  try {
-    await updateDoc(doc(db, 'users', userId), { status: newStatus });
-    alert(`Status akun berhasil diubah menjadi: ${newStatus.toUpperCase()}`);
-  } catch (err) {
-    alert('Gagal mengupdate status akun di cloud.');
-  }
-};
-
-// Admin Tambah Properti ke Cloud Firestore
-const handleAddProperty = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!newTitle || !newLocation || !newDesc) {
-    alert('Lengkapi judul, lokasi, dan deskripsi!');
-    return;
-  }
-
-  const newPropId = `PROP-${Date.now()}`;
-  const newProp: Property = {
-    id: newPropId,
-    title: newTitle,
-    price: Number(newPrice),
-    location: newLocation,
-    bedrooms: Number(newBedrooms),
-    bathrooms: Number(newBathrooms),
-    area: Number(newArea),
-    type: newType,
-    image: newImage,
-    description: newDesc,
-    features: newFeatures.split(',').map(f => f.trim()),
-    yearBuilt: new Date().getFullYear()
+    try {
+      await setDoc(doc(db, 'invoices', invoiceId), newInvoice);
+      setSelectedProperty(null);
+      setActiveTab('invoices');
+    } catch (err: any) {
+      alert('Gagal membuat invoice: ' + err.message);
+    }
   };
 
-  try {
-    await setDoc(doc(db, 'properties', newPropId), newProp);
-    alert(`Properti "${newTitle}" berhasil ditambahkan ke Cloud Database & Katalog!`);
-    setNewTitle('');
-    setNewDesc('');
-    setAdminActiveTab('users');
-  } catch (err) {
-    alert('Gagal menyimpan properti ke Firestore.');
-  }
-};
-
-const filterProperties = ({
-  priceRange,
-  propertyType,
-  minBedrooms
-}: {
-  priceRange?: [number, number];
-  propertyType?: string;
-  minBedrooms?: number;
-} = {}) => {
-  let filtered = properties;
-  if (priceRange) {
-    filtered = filtered.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
-  }
-  if (propertyType && propertyType !== 'all') {
-    filtered = filtered.filter(p => p.type === propertyType);
-  }
-  if (minBedrooms) {
-    filtered = filtered.filter(p => p.bedrooms >= minBedrooms);
-  }
-  setFilteredProperties(filtered);
-};
-
-// Pemesanan & Cetak Nota ke Cloud Firestore
-const handleCreateInvoice = async (property: Property, buyerData: any, paymentData: any) => {
-  const finalBuyer = {
-    name: buyerData?.name || currentUser?.fullName || 'Pembeli Terverifikasi',
-    phone: buyerData?.phone || currentUser?.phone || '-',
-    email: buyerData?.email || currentUser?.email || '-',
-    address: buyerData?.address || currentUser?.address || '-',
-    nik: currentUser?.nik || '-'
-  };
-
-  const trxId = `TRX-${Date.now()}`;
-  const transaction: Transaction = {
-    id: trxId,
-    property,
-    buyer: finalBuyer,
-    date: new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }),
-    invoiceNumber: `INV-DELONS-${Math.floor(100000 + Math.random() * 900000)}`,
-    downPayment: paymentData.downPayment,
-    remaining: property.price - paymentData.downPayment,
-    paymentMethod: paymentData.paymentMethod
-  };
-
-  await setDoc(doc(db, 'transactions', trxId), transaction);
-  navigateTo('invoice');
-};
-
-const isAuthPage = currentPage === 'login' || currentPage === 'register';
-
-return (
-  <div className="min-h-screen bg-gray-50 flex flex-col items-center">
-    <div className="w-full bg-white shadow-xl min-h-screen max-w-7xl flex flex-col">
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-900 flex flex-col font-sans">
 
       {/* NAVBAR */}
-      {!isAuthPage && (
-        <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
-          <div className="px-4 py-3 flex items-center justify-between">
-            <div
-              className="flex items-center gap-2 cursor-pointer"
-              onClick={() => navigateTo('home')}
-            >
-              <img
-                src="/images/logo-app.png"
-                alt="Logo"
-                className="w-8 h-8 object-contain rounded-md"
-                <div>
-                <h1 className="font-bold text-blue-600 leading-tight text-base">Delons Clusters</h1>
-                <p className="text-[10px] text-gray-500 font-medium">Platform Properti Lumion 3D (Cloud Sync)</p>
-              </div>
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm print:hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div
+            onClick={() => setActiveTab('catalogue')}
+            className="flex items-center gap-2 cursor-pointer"
+          >
+            <div className="bg-blue-600 text-white p-2 rounded-xl">
+              <Building2 className="size-5" />
             </div>
-
-            {/* Desktop Menu */}
-            <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-              <button onClick={() => navigateTo('home')} className={`hover:text-blue-600 transition ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Home</button>
-              <button onClick={() => navigateTo('services')} className={`hover:text-blue-600 transition ${currentPage === 'services' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Layanan</button>
-              <button onClick={() => navigateTo('video')} className={`hover:text-blue-600 transition ${currentPage === 'video' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Video Lumion</button>
-              <button onClick={() => navigateTo('about')} className={`hover:text-blue-600 transition ${currentPage === 'about' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Tentang Kami</button>
-              {currentUser?.role === 'admin' && (
-                <button onClick={() => navigateTo('admin')} className={`text-purple-600 font-bold flex items-center gap-1 ${currentPage === 'admin' ? 'underline' : ''}`}>
-                  <ShieldCheck className="size-4" /> Admin Panel
-                </button>
-              )}
-            </nav>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                className="text-xs bg-green-600 hover:bg-green-700 text-white gap-1"
-                onClick={() => {
-                  const msg = `Halo Admin Delons Clusters, saya ingin konsultasi unit properti 3D Lumion.`;
-                  window.open(`https://wa.me/6281331517717?text=${encodeURIComponent(msg)}`, '_blank');
-                }}
-              >
-                <MessageCircle className="size-3.5" /> <span className="hidden sm:inline">Chat Admin</span>
-              </Button>
-
-              {currentUser ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setCurrentUser(null);
-                    alert('Anda telah logout.');
-                    navigateTo('login');
-                  }}
-                  className="text-xs text-red-600 border-red-200 hover:bg-red-50"
-                >
-                  <LogIn className="size-3.5 mr-1 rotate-180" /> Keluar ({currentUser.username})
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => navigateTo('login')}
-                  className="text-xs"
-                >
-                  <LogIn className="size-3.5 mr-1" /> Masuk
-                </Button>
-              )}
-
-              <Button size="sm" onClick={() => navigateTo('invoice')} className="text-xs bg-blue-600 hover:bg-blue-700">
-                <FileText className="size-3.5 mr-1" /> Nota ({transactions.length})
-              </Button>
-            </div>
+            <span className="text-lg font-black tracking-tight text-gray-900">Delon Clusters</span>
+            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">3D</span>
           </div>
-        </header>
-      )}
 
-      {/* MAIN VIEWPORT */}
-      <main className="p-4 md:p-6 flex-1 flex flex-col">
-
-        {/* PAGE: HOME */}
-        {currentPage === 'home' && (
-          <div className="space-y-6">
-            <div
-              className="relative rounded-2xl overflow-hidden text-white p-6 md:p-10 shadow-lg bg-cover bg-center"
-              style={{
-                backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('/images/geter-unida.jpeg')`
-              }}
+          <div className="flex items-center gap-3">
+            <Button
+              variant={activeTab === 'catalogue' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('catalogue')}
+              className="text-xs font-semibold"
             >
-              <div className="relative z-10 max-w-xl space-y-3">
-                <Badge className="bg-blue-600 text-white">Visualisasi 3D Lumion Eksklusif</Badge>
-                <h2 className="text-2xl md:text-4xl font-bold">Temukan Hunian Impian Berbasis Model 3D</h2>
-                <p className="text-sm text-gray-200">
-                  Jelajahi perumahan eksklusif hasil desain pemodelan 3D dan render Lumion interaktif kelompok kami.
-                </p>
-                <div className="flex gap-2 pt-2">
-                  <Button className="bg-white text-blue-900 hover:bg-gray-100 font-semibold text-xs" onClick={() => navigateTo('video')}>
-                    Tonton Video Lumion
-                  </Button>
-                  <Button variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/40 text-xs" onClick={() => navigateTo('services')}>
-                    Lihat Layanan
-                  </Button>
-                </div>
+              Katalog 3D
+            </Button>
+            <Button
+              variant={activeTab === 'invoices' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('invoices')}
+              className="text-xs font-semibold gap-1.5"
+            >
+              <FileText className="size-3.5" /> Nota Transaksi
+            </Button>
+
+            {currentUser?.role === 'admin' && (
+              <Button
+                variant={activeTab === 'admin' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveTab('admin')}
+                className="text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200"
+              >
+                Admin Panel ({users.filter(u => u.status === 'pending').length})
+              </Button>
+            )}
+
+            {currentUser ? (
+              <div className="flex items-center gap-2 pl-2 border-l">
+                <span className="text-xs font-bold text-gray-800 hidden sm:inline">{currentUser.fullName}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentUser(null)}
+                  className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 gap-1"
+                >
+                  <LogOut className="size-3.5" /> Keluar
+                </Button>
               </div>
+            ) : (
+              <div className="flex items-center gap-2 pl-2 border-l">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowLoginModal(true)}
+                  className="text-xs font-semibold"
+                >
+                  Masuk
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setActiveTab('register')}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm"
+                >
+                  Daftar Akun
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* MAIN CONTAINER */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+        {/* VIEW 1: KATALOG (MENGGUNAKAN KOMPONEN ASLI) */}
+        {activeTab === 'catalogue' && (
+          <div className="space-y-6">
+            <PropertyFilters
+              {...({
+                searchQuery,
+                setSearchQuery,
+                selectedLocation,
+                setSelectedLocation,
+                priceRange,
+                setPriceRange
+              } as any)}
+            />
+
+            <PropertyList
+              properties={filteredProperties}
+              onSelectProperty={(prop: Property) => setSelectedProperty(prop)}
+            />
+          </div>
+        )}
+
+        {/* VIEW 2: SALES INVOICE */}
+        {activeTab === 'invoices' && (
+          <SalesInvoice
+            invoices={invoices as any}
+            onBack={() => setActiveTab('catalogue')}
+          />
+        )}
+
+        {/* VIEW 3: REGISTRASI DENGAN KTP SCANNER */}
+        {activeTab === 'register' && (
+          <div className="max-w-2xl mx-auto bg-white rounded-2xl p-6 border shadow-sm space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Registrasi Akun Calon Penghuni</h2>
+              <p className="text-xs text-gray-500">Lengkapi data identitas dan verifikasi E-KTP untuk validasi pemesanan.</p>
             </div>
 
-            <div className="grid lg:grid-cols-4 gap-6">
-              <div className="lg:col-span-1">
-                <PropertyFilters onFilterChange={filterProperties} />
-              </div>
-              <div className="lg:col-span-3 space-y-4">
-                <div className="flex justify-between items-center text-sm text-gray-600 border-b pb-2">
-                  <p>Menampilkan <span className="font-semibold text-blue-600">{filteredProperties.length}</span> unit klaster 3D (Cloud Sync)</p>
+            <form onSubmit={handleRegisterSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-gray-700">Nama Lengkap</label>
+                  <Input value={regFullName} onChange={(e) => setRegFullName(e.target.value)} required className="text-xs" />
                 </div>
-                <PropertyList
-                  properties={filteredProperties}
-                  onSelectProperty={(prop) => {
-                    if (!currentUser) {
-                      alert('Silakan Masuk / Registrasi terlebih dahulu untuk memesan properti!');
-                      navigateTo('login');
-                      return;
-                    }
-                    setSelectedProperty(prop);
-                  }}
-                />
+                <div>
+                  <label className="font-semibold text-gray-700">NIK (Nomor Induk Kependudukan)</label>
+                  <Input value={regNik} onChange={(e) => setRegNik(e.target.value)} required className="text-xs" />
+                </div>
+                <div>
+                  <label className="font-semibold text-gray-700">Nomor WhatsApp</label>
+                  <Input value={regPhone} onChange={(e) => setRegPhone(e.target.value)} required className="text-xs" />
+                </div>
+                <div>
+                  <label className="font-semibold text-gray-700">Email</label>
+                  <Input type="email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} required className="text-xs" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="font-semibold text-gray-700">Alamat Lengkap</label>
+                  <Input value={regAddress} onChange={(e) => setRegAddress(e.target.value)} required className="text-xs" />
+                </div>
+                <div>
+                  <label className="font-semibold text-gray-700">Username Login</label>
+                  <Input value={regUsername} onChange={(e) => setRegUsername(e.target.value)} required className="text-xs" />
+                </div>
+                <div>
+                  <label className="font-semibold text-gray-700">Password</label>
+                  <Input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} required className="text-xs" />
+                </div>
               </div>
+
+              {/* Komponen Kamera KTP Scanner */}
+              <KTPScanner
+                {...({
+                  onCaptureKTP: (img: string) => setKtpImage(img),
+                  onCaptureSelfie: (img: string) => setSelfieImage(img),
+                  ktpImage,
+                  selfieImage
+                } as any)}
+              />
+
+              <div className="flex gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setActiveTab('catalogue')} className="flex-1 text-xs">
+                  Batal
+                </Button>
+                <Button type="submit" className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5">
+                  Kirim Pendaftaran
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* VIEW 4: ADMIN PANEL */}
+        {activeTab === 'admin' && currentUser?.role === 'admin' && (
+          <div className="bg-white rounded-2xl p-6 border shadow-sm space-y-4">
+            <h2 className="text-lg font-bold text-gray-900">Verifikasi Pengajuan User Baru</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-gray-50 text-gray-500 border-b">
+                  <tr>
+                    <th className="p-3">Nama / NIK</th>
+                    <th className="p-3">Kontak</th>
+                    <th className="p-3">Foto E-KYC</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {users.filter(u => u.role !== 'admin').map((u) => (
+                    <tr key={u.id}>
+                      <td className="p-3">
+                        <p className="font-bold">{u.fullName}</p>
+                        <p className="text-[10px] text-gray-400 font-mono">NIK: {u.nik}</p>
+                      </td>
+                      <td className="p-3">
+                        <p>{u.phone}</p>
+                        <p className="text-[10px] text-gray-400">{u.email}</p>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex gap-2">
+                          {u.ktpImage && <a href={u.ktpImage} target="_blank" rel="noreferrer" className="text-blue-600 underline">KTP</a>}
+                          {u.selfieImage && <a href={u.selfieImage} target="_blank" rel="noreferrer" className="text-blue-600 underline">Wajah</a>}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <Badge className={`text-[10px] ${u.status === 'approved' ? 'bg-emerald-600 text-white' : u.status === 'rejected' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>
+                          {u.status}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-right">
+                        {u.status === 'pending' && (
+                          <div className="flex justify-end gap-1.5">
+                            <Button
+                              size="sm"
+                              onClick={() => updateDoc(doc(db, 'users', u.id), { status: 'approved' })}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] h-7 px-2.5"
+                            >
+                              ACC
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => updateDoc(doc(db, 'users', u.id), { status: 'rejected' })}
+                              className="text-red-600 border-red-200 text-[11px] h-7 px-2"
+                            >
+                              Tolak
+                            </Button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
-        {/* PAGE: ADMIN PANEL */}
-        {currentPage === 'admin' && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                  <ShieldCheck className="size-6 text-purple-600" /> Admin Cloud Control Panel
-                </h2>
-                <p className="text-xs text-gray-500">Data tersinkronisasi langsung ke Firebase Firestore Database.</p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={adminActiveTab === 'users' ? 'default' : 'outline'}
-                  onClick={() => setAdminActiveTab('users')}
-                  className={adminActiveTab === 'users' ? 'bg-purple-600 hover:bg-purple-700' : ''}
-                >
-                  <UserCheck className="size-4 mr-1" /> Verifikasi User ({users.filter(u => u.status === 'pending').length} Pending)
-                </Button>
-                <Button
-                  size="sm"
-                  variant={adminActiveTab === 'addProperty' ? 'default' : 'outline'}
-                  onClick={() => setAdminActiveTab('addProperty')}
-                  className={adminActiveTab === 'addProperty' ? 'bg-purple-600 hover:bg-purple-700' : ''}
-                >
-                  <PlusCircle className="size-4 mr-1" /> Tambah Rumah 3D
-                </Button>
-              </div>
+      </main>
+
+      {/* POPUP LOGIN (BERSIH DARI HINT) */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b">
+              <h3 className="font-bold text-gray-900 text-sm">Masuk ke Akun</h3>
+              <button onClick={() => setShowLoginModal(false)} className="text-gray-400 hover:text-gray-700">
+                <X className="size-4" />
+              </button>
             </div>
 
-            {/* TAB 1: VERIFIKASI USER */}
-            {adminActiveTab === 'users' && (
-              <div className="space-y-4">
-                <h3 className="font-bold text-gray-800 text-lg">Daftar Pengguna Cloud Firestore & ACC Status</h3>
-                <div className="grid gap-4">
-                  {users.map(u => (
-                    <Card key={u.id} className="p-4 border shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-gray-900 text-base">{u.fullName}</span>
-                          <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className="text-[10px]">
-                            {u.role.toUpperCase()}
-                          </Badge>
-                          <Badge
-                            className={`text-[10px] ${u.status === 'approved' ? 'bg-green-100 text-green-800 border-green-300' :
-                              u.status === 'pending' ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                                'bg-red-100 text-red-800 border-red-300'
-                              }`}
-                          >
-                            {u.status === 'approved' ? 'TERVERIFIKASI (ACC)' : u.status === 'pending' ? 'MENUNGGU ACC' : 'DITOLAK'}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-600">
-                          <p><span className="font-semibold">NIK:</span> {u.nik}</p>
-                          <p><span className="font-semibold">Username:</span> {u.username}</p>
-                          <p><span className="font-semibold">Password:</span> <code className="bg-gray-100 px-1 rounded">{u.password}</code></p>
-                          <p><span className="font-semibold">WhatsApp:</span> {u.phone}</p>
-                          <p><span className="font-semibold">Email:</span> {u.email}</p>
-                          <p className="sm:col-span-2"><span className="font-semibold">Alamat KTP:</span> {u.address}</p>
-                        </div>
-
-                        <div className="flex gap-4 pt-2">
-                          <div>
-                            <p className="text-[11px] font-semibold text-gray-500 mb-1">Foto Dokumen KTP:</p>
-                            <img src={u.ktpImage} alt="KTP" className="w-24 h-16 object-cover rounded-md border shadow-sm bg-gray-100" />
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-semibold text-gray-500 mb-1">Foto Wajah Kamera:</p>
-                            <img src={u.faceImage} alt="Wajah" className="w-24 h-16 object-cover rounded-md border shadow-sm bg-gray-100" />
-                          </div>
-                        </div>
-                      </div>
-
-                      {u.role !== 'admin' && (
-                        <div className="flex md:flex-col gap-2 w-full md:w-auto">
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-xs w-full"
-                            disabled={u.status === 'approved'}
-                            onClick={() => handleUserStatusUpdate(u.id, 'approved')}
-                          >
-                            <CheckCircle2 className="size-3.5 mr-1" /> ACC Akun
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 border-red-300 hover:bg-red-50 text-xs w-full"
-                            disabled={u.status === 'rejected'}
-                            onClick={() => handleUserStatusUpdate(u.id, 'rejected')}
-                          >
-                            <XCircle className="size-3.5 mr-1" /> Tolak
-                          </Button>
-                        </div>
-                      )}
-                    </Card>
-                  ))}
-                </div>
+            {loginError && (
+              <div className="p-2.5 bg-red-50 text-red-700 rounded-lg text-xs border border-red-200">
+                {loginError}
               </div>
             )}
 
-            {/* TAB 2: TAMBAH PROPERTI CLOUD */}
-            {adminActiveTab === 'addProperty' && (
-              <Card className="max-w-2xl mx-auto p-6 shadow-sm">
-                <CardHeader className="p-0 mb-4">
-                  <CardTitle className="text-xl">Tambah Unit Rumah Pemodelan 3D (Cloud Firestore)</CardTitle>
-                  <p className="text-xs text-gray-500">Data otomatis ter-upload ke Firestore dan sinkron di semua device.</p>
-                </CardHeader>
-                <form onSubmit={handleAddProperty} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold">Nama Unit Properti</label>
-                      <Input placeholder="Cluster Grand Delons Tipe 45" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} required />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold">Harga Jual (Rp)</label>
-                      <Input type="number" value={newPrice} onChange={(e) => setNewPrice(Number(e.target.value))} required />
-                    </div>
-                  </div>
+            <form onSubmit={handleLogin} className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-700">Username</label>
+                <Input required value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="text-xs" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-700">Password</label>
+                <Input type="password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="text-xs" />
+              </div>
+              <div className="pt-2 flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setShowLoginModal(false)} className="flex-1 text-xs">
+                  Batal
+                </Button>
+                <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs">
+                  Masuk
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold">Lokasi Kota</label>
-                      <Input placeholder="Bandung / Surabaya" value={newLocation} onChange={(e) => setNewLocation(e.target.value)} required />
-                    </div>
+      {/* POPUP DETAIL & PEMBELIAN */}
+      {selectedProperty && (
+        <PropertyDetail
+          property={selectedProperty}
+          currentUser={currentUser}
+          onClose={() => setSelectedProperty(null)}
+          onPurchase={handlePurchase}
+        />
+      )}
+
+    </div>
+  );
+}
