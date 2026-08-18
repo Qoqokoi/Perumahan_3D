@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
 import {
   collection, onSnapshot, doc, setDoc, serverTimestamp
@@ -7,9 +7,11 @@ import { PropertyList } from './components/PropertyList';
 import { PropertyFilters } from './components/PropertyFilters';
 import { PropertyDetail } from './components/PropertyDetail';
 import SalesInvoice from './components/SalesInvoice';
+import { KTPScanner } from './components/KTPScanner';
 import {
   Home, Search, FileText, User, LogIn,
-  Video, Users, Building2, Phone, MessageCircle, Mail, MapPin, CheckCircle, ShieldCheck
+  Video, Users, Building2, Phone, MessageCircle, Mail, MapPin,
+  CheckCircle, ShieldCheck, Camera, ScanLine, Upload, Image as ImageIcon
 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -40,6 +42,7 @@ export interface Transaction {
     phone: string;
     email: string;
     address: string;
+    nik?: string;
   };
   date: string;
   invoiceNumber: string;
@@ -50,10 +53,13 @@ export interface Transaction {
 
 export interface CurrentUserType {
   fullName: string;
+  nik: string;
   email: string;
   phone: string;
   address: string;
   role: 'admin' | 'user';
+  ktpImage?: string;
+  selfieImage?: string;
 }
 
 // 6 PROPERTI ASLI AWAL (Folder public/images/)
@@ -149,12 +155,18 @@ export default function App() {
   const [filteredProperties, setFilteredProperties] = useState<Property[]>(mockProperties);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Realtime Database State
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
 
   // Auth & Page State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUserType | null>(null);
   const [currentPage, setCurrentPage] = useState<'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services'>('login');
+
+  // Scanner Modal State
+  const [showKtpScanner, setShowKtpScanner] = useState(false);
 
   // Responsive Hook Inline
   const [isMobile, setIsMobile] = useState(false);
@@ -168,14 +180,28 @@ export default function App() {
   // Form States
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+
+  // Register States
   const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
+  const [regNik, setRegNik] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regAddress, setRegAddress] = useState('');
+  const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [regKtpImage, setRegKtpImage] = useState<string>('');
+  const [regSelfieImage, setRegSelfieImage] = useState<string>('');
 
-  // 1. FIRESTORE REALTIME SYNC (Invoices & Properties)
+  const ktpInputRef = useRef<HTMLInputElement>(null);
+  const selfieInputRef = useRef<HTMLInputElement>(null);
+
+  // 1. SINKRONISASI REALTIME CLOUD FIRESTORE
   useEffect(() => {
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersList: any[] = [];
+      snapshot.forEach((d) => usersList.push({ id: d.id, ...d.data() }));
+      setRegisteredUsers(usersList);
+    });
+
     const unsubInvoices = onSnapshot(collection(db, 'invoices'), (snapshot) => {
       const loaded: any[] = [];
       snapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() }));
@@ -184,7 +210,10 @@ export default function App() {
       }
     });
 
-    return () => unsubInvoices();
+    return () => {
+      unsubUsers();
+      unsubInvoices();
+    };
   }, []);
 
   // 2. SEARCH & FILTER HANDLERS
@@ -222,11 +251,147 @@ export default function App() {
     setFilteredProperties(filtered);
   };
 
-  // 3. PURCHASE & INVOICE HANDLER
+  // Helper Convert File Image to Base64
+  const handleImageUpload = (file: File, type: 'ktp' | 'selfie') => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+      if (type === 'ktp') setRegKtpImage(base64);
+      if (type === 'selfie') setRegSelfieImage(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 3. REGISTRASI LENGKAP DENGAN E-KYC KE FIRESTORE
+  const handleRegisterSubmit = async () => {
+    if (!regName.trim() || !regNik.trim() || !regPhone.trim() || !regAddress.trim() || !regEmail.trim() || !regPassword.trim()) {
+      alert('Mohon lengkapi data teks identitas (Nama, NIK, WA, Alamat, Email, Password)!');
+      return;
+    }
+
+    if (!regKtpImage || !regSelfieImage) {
+      alert('Wajib melampirkan Foto E-KTP dan Foto Wajah (Selfie) untuk verifikasi akun!');
+      return;
+    }
+
+    const cleanInput = regEmail.trim().toLowerCase();
+    const finalEmail = cleanInput.includes('@') ? cleanInput : `${cleanInput}@gmail.com`;
+    const username = cleanInput.includes('@') ? cleanInput.split('@')[0] : cleanInput;
+
+    const isExist = registeredUsers.some(u =>
+      u.email?.toLowerCase() === finalEmail ||
+      u.username?.toLowerCase() === username ||
+      (u.nik && u.nik === regNik.trim())
+    );
+
+    if (isExist) {
+      alert('Email, Username, atau NIK ini sudah terdaftar! Silakan Login.');
+      return;
+    }
+
+    const newUserId = `USR-${Date.now().toString().slice(-6)}`;
+    const newUserData = {
+      id: newUserId,
+      fullName: regName.trim(),
+      nik: regNik.trim(),
+      phone: regPhone.trim(),
+      address: regAddress.trim(),
+      email: finalEmail,
+      username: username,
+      password: regPassword,
+      ktpImage: regKtpImage,
+      selfieImage: regSelfieImage,
+      role: 'user',
+      status: 'approved',
+      createdAt: serverTimestamp()
+    };
+
+    try {
+      await setDoc(doc(db, 'users', newUserId), newUserData);
+      alert('Registrasi E-KYC Berhasil! Data KTP & Foto Wajah telah tersimpan di Database. Silakan Login.');
+
+      setLoginEmail(finalEmail);
+      setLoginPassword(regPassword);
+
+      // Reset Form
+      setRegName('');
+      setRegNik('');
+      setRegPhone('');
+      setRegAddress('');
+      setRegEmail('');
+      setRegPassword('');
+      setRegKtpImage('');
+      setRegSelfieImage('');
+
+      setCurrentPage('login');
+    } catch (error: any) {
+      alert('Gagal mendaftar: ' + error.message);
+    }
+  };
+
+  // 4. AUTENTIKASI LOGIN
+  const handleLoginSubmit = () => {
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      alert('Silakan masukkan email/username dan password terlebih dahulu!');
+      return;
+    }
+
+    const inputId = loginEmail.trim().toLowerCase();
+    const inputPass = loginPassword.trim();
+
+    // Administrator Check
+    if ((inputId === 'admin' || inputId === 'admin@delonclusters.com') && inputPass === 'admin123') {
+      const adminData: CurrentUserType = {
+        fullName: 'Administrator Delons',
+        nik: '3502000000000001',
+        email: 'admin@delonclusters.com',
+        phone: '081234567890',
+        address: 'Headquarter Delon Clusters, Ponorogo',
+        role: 'admin'
+      };
+      setCurrentUser(adminData);
+      setIsLoggedIn(true);
+      setCurrentPage('home');
+      alert('Login Berhasil! Selamat datang Admin Delons Clusters.');
+      return;
+    }
+
+    // Database Matching
+    const formattedEmail = inputId.includes('@') ? inputId : `${inputId}@gmail.com`;
+
+    const matchedUser = registeredUsers.find(u =>
+      (u.email?.toLowerCase() === inputId ||
+        u.email?.toLowerCase() === formattedEmail ||
+        u.username?.toLowerCase() === inputId) &&
+      u.password === inputPass
+    );
+
+    if (!matchedUser) {
+      alert('Kredensial tidak valid! Akun tidak ditemukan atau password salah.');
+      return;
+    }
+
+    const verifiedUser: CurrentUserType = {
+      fullName: matchedUser.fullName || matchedUser.name || 'User Delons',
+      nik: matchedUser.nik || '3502xxxxxxxxxxxx',
+      email: matchedUser.email || formattedEmail,
+      phone: matchedUser.phone || '081234567890',
+      address: matchedUser.address || 'Kawasan Delons Clusters',
+      role: matchedUser.role || 'user',
+      ktpImage: matchedUser.ktpImage,
+      selfieImage: matchedUser.selfieImage
+    };
+
+    setCurrentUser(verifiedUser);
+    setIsLoggedIn(true);
+    setCurrentPage('home');
+    alert(`Login Berhasil! Selamat datang, ${verifiedUser.fullName}.`);
+  };
+
+  // 5. PURCHASE & INVOICE HANDLER
   const handleCreateInvoice = async (property: Property, buyerData: any, paymentData: any) => {
     const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
 
-    // Pastikan domain email pembeli selalu terisi
     const finalBuyerEmail = buyerData.email
       ? (buyerData.email.includes('@') ? buyerData.email.trim() : `${buyerData.email.trim()}@gmail.com`)
       : (currentUser?.email || 'buyer@gmail.com');
@@ -237,9 +402,11 @@ export default function App() {
       property,
       buyer: {
         ...buyerData,
-        email: finalBuyerEmail
+        email: finalBuyerEmail,
+        nik: buyerData.nik || currentUser?.nik || '3502xxxxxxxxxxxx'
       },
       buyerName: buyerData.name || currentUser?.fullName || 'Pembeli Delons',
+      buyerNik: buyerData.nik || currentUser?.nik || '3502xxxxxxxxxxxx',
       buyerPhone: buyerData.phone || currentUser?.phone || '081234567890',
       buyerEmail: finalBuyerEmail,
       buyerAddress: buyerData.address || currentUser?.address || 'Kawasan Delons Clusters',
@@ -267,10 +434,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
-      {/* Main Container */}
       <div className="w-full bg-white shadow-xl min-h-screen max-w-7xl">
 
-        {/* Header / Navbar */}
+        {/* HEADER / NAVBAR */}
         <header className="bg-white border-b sticky top-0 z-20">
           <div className="px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2 cursor-pointer" onClick={() => { if (isLoggedIn) setCurrentPage('home'); }}>
@@ -288,10 +454,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* MENU NAVBAR HANYA MUNCUL JIKA TIDAK DI HALAMAN LOGIN */}
             {currentPage !== 'login' && (
               <>
-                {/* Navigation Menu */}
                 <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
                   <button onClick={() => setCurrentPage('home')} className={`hover:text-blue-600 ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Home</button>
                   <button onClick={() => setCurrentPage('services')} className={`hover:text-blue-600 ${currentPage === 'services' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Layanan</button>
@@ -299,7 +463,6 @@ export default function App() {
                   <button onClick={() => setCurrentPage('about')} className={`hover:text-blue-600 ${currentPage === 'about' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Tentang Kami</button>
                 </nav>
 
-                {/* Navigasi Kanan */}
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
@@ -315,7 +478,6 @@ export default function App() {
 
                   {isLoggedIn ? (
                     <div className="flex items-center gap-2">
-                      {/* USER & ROLE BADGE */}
                       <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 border rounded-lg text-xs">
                         <User className="size-3 text-blue-600" />
                         <span className="font-semibold text-gray-800">{currentUser?.fullName}</span>
@@ -358,12 +520,12 @@ export default function App() {
           </div>
         </header>
 
-        {/* Content Pages */}
+        {/* MAIN CONTENT */}
         <main className="p-4">
 
+          {/* HOME */}
           {currentPage === 'home' && (
             <div className="space-y-6">
-              {/* Hero Section */}
               <div
                 className="relative rounded-2xl overflow-hidden text-white p-6 md:p-10 shadow-lg bg-cover bg-center"
                 style={{
@@ -382,7 +544,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Property Filter & List Grid */}
               <div className="grid lg:grid-cols-4 gap-6">
                 <div className="lg:col-span-1">
                   <PropertyFilters onFilterChange={filterProperties} />
@@ -400,6 +561,7 @@ export default function App() {
             </div>
           )}
 
+          {/* SERVICES */}
           {currentPage === 'services' && (
             <div className="space-y-6">
               <div className="text-center space-y-2">
@@ -428,6 +590,7 @@ export default function App() {
             </div>
           )}
 
+          {/* VIDEO */}
           {currentPage === 'video' && (
             <div className="space-y-6 text-center">
               <div className="space-y-2">
@@ -447,6 +610,7 @@ export default function App() {
             </div>
           )}
 
+          {/* ABOUT */}
           {currentPage === 'about' && (
             <div className="space-y-6">
               <div className="text-center space-y-2">
@@ -454,7 +618,6 @@ export default function App() {
                 <p className="text-sm text-gray-600">Tim Mahasiswa Pengembang Platform Properti 3D (Tugas UAS Desain Pemodelan 3D)</p>
               </div>
 
-              {/* 3 Anggota Tim */}
               <div className="grid md:grid-cols-3 gap-6">
                 {[
                   { name: 'Fathurrahman Naufal', nim: '452024611064', role: 'Project Manager & Fullstack', desc: 'Bertanggung jawab atas arsitektur sistem web dan integrasi React.', img: '/images/rumah-fathur.jpeg' },
@@ -482,6 +645,7 @@ export default function App() {
             </div>
           )}
 
+          {/* LOGIN */}
           {currentPage === 'login' && (
             <div
               className="w-full min-h-[85vh] flex flex-col items-center justify-center py-10 px-4 bg-cover bg-center rounded-2xl my-2 gap-6"
@@ -489,7 +653,6 @@ export default function App() {
                 backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('/images/perumahan-1.jpeg')`
               }}
             >
-              {/* EFEK TEKS 3D */}
               <div className="text-center space-y-1">
                 <h2
                   className="text-2xl md:text-4xl font-black tracking-wider text-amber-400 uppercase"
@@ -509,7 +672,6 @@ export default function App() {
                 </h3>
               </div>
 
-              {/* Card Form Login */}
               <Card className="max-w-md w-full bg-white/95 backdrop-blur-md shadow-2xl border-0">
                 <CardHeader>
                   <CardTitle className="text-center text-xl">Login ke RumahKu</CardTitle>
@@ -533,34 +695,8 @@ export default function App() {
                     />
                   </div>
                   <Button
-                    className="w-full bg-blue-600 hover:bg-blue-700"
-                    onClick={() => {
-                      if (!loginEmail || !loginPassword) {
-                        alert('Silakan masukkan email dan password terlebih dahulu!');
-                        return;
-                      }
-
-                      const cleanIdentifier = loginEmail.trim().toLowerCase();
-                      const isAdmin = (cleanIdentifier === 'admin') && loginPassword === 'admin123';
-
-                      // Auto format email dengan @gmail.com
-                      const formattedEmail = cleanIdentifier.includes('@')
-                        ? cleanIdentifier
-                        : `${cleanIdentifier}@gmail.com`;
-
-                      const userObj: CurrentUserType = {
-                        fullName: isAdmin ? 'Administrator Delons' : (regName || loginEmail.split('@')[0]),
-                        email: isAdmin ? 'admin@delonclusters.com' : formattedEmail,
-                        phone: regPhone || '081234567890',
-                        address: regAddress || 'Kawasan Delons Clusters, Ponorogo',
-                        role: isAdmin ? 'admin' : 'user'
-                      };
-
-                      setCurrentUser(userObj);
-                      setIsLoggedIn(true);
-                      setCurrentPage('home');
-                      alert(`Login Berhasil! Selamat datang ${isAdmin ? 'Admin' : userObj.fullName}.`);
-                    }}
+                    className="w-full bg-blue-600 hover:bg-blue-700 font-bold"
+                    onClick={handleLoginSubmit}
                   >
                     Login
                   </Button>
@@ -572,54 +708,175 @@ export default function App() {
             </div>
           )}
 
+          {/* REGISTER (DENGAN OCR SCAN KTP & FOTO SELFIE) */}
           {currentPage === 'register' && (
-            <div className="max-w-md mx-auto py-8">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-center text-xl">Daftar Akun Baru</CardTitle>
+            <div className="max-w-xl mx-auto py-6">
+              <Card className="shadow-lg border border-gray-200">
+                <CardHeader className="border-b pb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-xl font-bold text-gray-900">Registrasi Akun Calon Pembeli</CardTitle>
+                      <p className="text-xs text-gray-500 mt-1">Verifikasi E-KYC E-KTP & Foto Wajah untuk validasi pemesanan.</p>
+                    </div>
+                    <Badge className="bg-blue-600 text-white text-[10px]">E-KYC Ready</Badge>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Nama Lengkap</label>
-                    <Input placeholder="Nama lengkap..." value={regName} onChange={(e) => setRegName(e.target.value)} />
+
+                <CardContent className="space-y-5 pt-5">
+
+                  {/* Action Banner OCR Scanner */}
+                  <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <ScanLine className="size-8 text-blue-600" />
+                      <div>
+                        <p className="text-xs font-bold text-blue-900">Scan KTP dengan Kamera / OCR</p>
+                        <p className="text-[11px] text-blue-700">Ekstrak NIK, Nama, dan Alamat secara otomatis.</p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowKtpScanner(true)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs gap-1 shadow-sm shrink-0"
+                    >
+                      <Camera className="size-3.5" /> Buka Scanner
+                    </Button>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Nomor WhatsApp</label>
-                    <Input placeholder="08xxxxxxxxxx" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} />
+
+                  {/* Form Inputs */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="font-semibold text-gray-700">NIK (Nomor Induk Kependudukan)</label>
+                      <Input
+                        placeholder="16 Digit NIK KTP..."
+                        value={regNik}
+                        onChange={(e) => setRegNik(e.target.value)}
+                        className="text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-700">Nama Lengkap Sesuai KTP</label>
+                      <Input
+                        placeholder="Nama lengkap..."
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        className="text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-700">Nomor WhatsApp Aktif</label>
+                      <Input
+                        placeholder="08xxxxxxxxxx"
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        className="text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-700">Email (Auto @gmail.com)</label>
+                      <Input
+                        placeholder="nama@gmail.com"
+                        value={regEmail}
+                        onChange={(e) => setRegEmail(e.target.value)}
+                        className="text-xs mt-1"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="font-semibold text-gray-700">Alamat Domisili KTP</label>
+                      <Input
+                        placeholder="Alamat lengkap domisili..."
+                        value={regAddress}
+                        onChange={(e) => setRegAddress(e.target.value)}
+                        className="text-xs mt-1"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="font-semibold text-gray-700">Password Akun</label>
+                      <Input
+                        type="password"
+                        placeholder="Buat password akun..."
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        className="text-xs mt-1"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Alamat Domisili</label>
-                    <Input placeholder="Alamat lengkap..." value={regAddress} onChange={(e) => setRegAddress(e.target.value)} />
+
+                  {/* Dokumen E-KYC (Foto KTP & Selfie) */}
+                  <div className="space-y-2 pt-2 border-t border-gray-100">
+                    <p className="text-xs font-bold text-gray-800">Lampiran Dokumen Identitas (Wajib)</p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Box Foto KTP */}
+                      <div className="border border-dashed border-gray-300 rounded-xl p-3 text-center space-y-2 bg-gray-50/50">
+                        <span className="text-[11px] font-semibold text-gray-600 block">1. Foto Fisik E-KTP</span>
+                        {regKtpImage ? (
+                          <div className="aspect-[4/3] rounded-lg overflow-hidden border">
+                            <img src={regKtpImage} alt="KTP" className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="py-4 text-gray-400">
+                            <ImageIcon className="size-8 mx-auto mb-1 opacity-50" />
+                            <span className="text-[10px] block">Belum ada foto</span>
+                          </div>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => ktpInputRef.current?.click()}
+                          className="w-full text-[11px] h-8 gap-1"
+                        >
+                          <Upload className="size-3" /> {regKtpImage ? 'Ganti KTP' : 'Upload KTP'}
+                        </Button>
+                        <input
+                          type="file"
+                          ref={ktpInputRef}
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'ktp')}
+                        />
+                      </div>
+
+                      {/* Box Foto Wajah / Selfie */}
+                      <div className="border border-dashed border-gray-300 rounded-xl p-3 text-center space-y-2 bg-gray-50/50">
+                        <span className="text-[11px] font-semibold text-gray-600 block">2. Foto Wajah (Selfie)</span>
+                        {regSelfieImage ? (
+                          <div className="aspect-[4/3] rounded-lg overflow-hidden border">
+                            <img src={regSelfieImage} alt="Selfie" className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="py-4 text-gray-400">
+                            <Camera className="size-8 mx-auto mb-1 opacity-50" />
+                            <span className="text-[10px] block">Belum ada foto</span>
+                          </div>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => selfieInputRef.current?.click()}
+                          className="w-full text-[11px] h-8 gap-1"
+                        >
+                          <Upload className="size-3" /> {regSelfieImage ? 'Ganti Selfie' : 'Upload Selfie'}
+                        </Button>
+                        <input
+                          type="file"
+                          ref={selfieInputRef}
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'selfie')}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Email / Username</label>
-                    <Input
-                      placeholder="Email atau username..."
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Password</label>
-                    <Input type="password" placeholder="Buat password..." value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
-                  </div>
+
                   <Button
-                    className="w-full bg-blue-600"
-                    onClick={() => {
-                      if (!regName || !regEmail || !regPassword) {
-                        alert('Mohon lengkapi nama, email, dan password.');
-                        return;
-                      }
-
-                      const autoEmail = regEmail.includes('@') ? regEmail.trim() : `${regEmail.trim()}@gmail.com`;
-                      setRegEmail(autoEmail);
-
-                      alert('Registrasi Berhasil! Silakan Login.');
-                      setCurrentPage('login');
-                    }}
+                    className="w-full bg-blue-600 hover:bg-blue-700 font-bold text-xs py-3 shadow-md"
+                    onClick={handleRegisterSubmit}
                   >
-                    Register
+                    Kirim & Daftarkan Akun E-KYC
                   </Button>
+
                   <p className="text-xs text-center text-gray-600">
                     Sudah punya akun? <button onClick={() => setCurrentPage('login')} className="text-blue-600 underline font-medium">Login</button>
                   </p>
@@ -628,6 +885,7 @@ export default function App() {
             </div>
           )}
 
+          {/* INVOICE */}
           {currentPage === 'invoice' && (
             <SalesInvoice
               invoices={transactions as any}
@@ -636,7 +894,20 @@ export default function App() {
           )}
         </main>
 
-        {/* Property Detail Modal */}
+        {/* MODAL SCANNER KTP (Tesseract OCR) */}
+        {showKtpScanner && (
+          <KTPScanner
+            onDataExtracted={(data) => {
+              if (data.name) setRegName(data.name);
+              if (data.nik) setRegNik(data.nik);
+              if (data.address) setRegAddress(data.address);
+              setShowKtpScanner(false);
+            }}
+            onClose={() => setShowKtpScanner(false)}
+          />
+        )}
+
+        {/* MODAL DETAIL UNIT & PEMESANAN */}
         {selectedProperty && (
           <PropertyDetail
             property={selectedProperty}
@@ -649,7 +920,7 @@ export default function App() {
           />
         )}
 
-        {/* Mobile Bottom Navigation Bar */}
+        {/* BOTTOM NAVIGATION MOBILE */}
         {isLoggedIn && isMobile && (
           <div className="sticky bottom-0 bg-white border-t flex justify-around py-2 px-1 z-20 text-xs shadow-lg">
             <button onClick={() => setCurrentPage('home')} className={`flex flex-col items-center ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
