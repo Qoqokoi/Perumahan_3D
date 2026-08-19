@@ -66,84 +66,84 @@ export interface CurrentUserType {
 const mockProperties: Property[] = [
   {
     id: 'PROP-01',
-    title: 'Rumah Modern Fathur',
+    title: 'Rumah 1 lantai by:fathur',
     price: 2500000000,
     location: 'Jakarta Selatan',
     bedrooms: 4,
     bathrooms: 3,
     area: 250,
     type: 'house',
-    image: '/images/rumah-fathur.jpeg',
+    image: '/images/fathur-1lantai.jpeg',
     description: 'Rumah modern minimalis dengan desain kontemporer berbasis render Lumion di kawasan elite.',
     features: ['Garasi 2 mobil', 'Taman belakang', 'Smart home', 'Security 24 jam'],
     yearBuilt: 2022
   },
   {
     id: 'PROP-02',
-    title: 'Rumah Tradisional Fathur',
+    title: 'Rumah 2 lantai by:fathur',
     price: 5000000000,
     location: 'Bali',
     bedrooms: 5,
     bathrooms: 4,
     area: 400,
     type: 'house',
-    image: '/images/perumahan-1.jpeg',
+    image: '/images/fathur-2lantai.png',
     description: 'Villa mewah dengan pemandangan sawah dan kolam renang pribadi hasil pemodelan 3D.',
     features: ['Kolam renang', 'View sawah', 'Fully furnished', 'Dekat pantai'],
     yearBuilt: 2021
   },
   {
     id: 'PROP-03',
-    title: 'Villa Impian Delons',
+    title: 'rumah 1 lantai by:naufal',
     price: 3500000000,
     location: 'Surabaya',
     bedrooms: 4,
     bathrooms: 3,
     area: 300,
     type: 'apartment',
-    image: '/images/rumah-delon.jpeg',
+    image: '/images/delon-1lantai.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
   },
   {
     id: 'PROP-04',
-    title: 'Villa Impian Delons',
+    title: 'rumah 2 lantai by:naufal',
     price: 3500000000,
     location: 'Jember',
     bedrooms: 4,
     bathrooms: 3,
     area: 300,
     type: 'apartment',
-    image: '/images/rumah-delon.jpeg',
+    image: '/images/delon-2lantai.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
   },
   {
     id: 'PROP-05',
-    title: 'Villa Impian Davi',
+    title: 'rumah 1 lantai by:dafi',
     price: 3500000000,
     location: 'Bandung',
     bedrooms: 4,
     bathrooms: 3,
     area: 300,
     type: 'villa',
-    image: '/images/rumah-dafi.jpeg',
+    image: '/images/dafi-1lantai.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
   },
   {
     id: 'PROP-06',
-    title: 'Villa Impian Davi',
+    title: 'rumah 2 lantai by:dafi',
     price: 3500000000,
     location: 'Tasikmalaya',
     bedrooms: 4,
     bathrooms: 3,
     area: 300,
     type: 'villa',
-    image: '/images/rumah-dafi.jpeg',
+    image: '/images/dafi-2lantai.jpeg',
     description: 'Villa eksklusif dengan pemandangan pegunungan hasil pemodelan 3D.',
     features: ['Private Pool', 'Rooftop Garden', 'Smart Security', 'Carport 2 Mobil'],
     yearBuilt: 2024
@@ -694,8 +694,8 @@ export default function App() {
                 <button
                   onClick={() => setCurrentPage('admin')}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition ${currentPage === 'admin'
-                      ? 'bg-purple-700 text-white'
-                      : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                    ? 'bg-purple-700 text-white'
+                    : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
                     }`}
                 >
                   <ShieldCheck className="size-3.5" /> Admin Panel ({pendingUsersCount})
@@ -779,7 +779,7 @@ export default function App() {
                 <div
                   className="relative rounded-2xl overflow-hidden text-white p-5 sm:p-8 md:p-10 shadow-lg bg-cover bg-center"
                   style={{
-                    backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.55)), url('/images/geter-unida.jpeg')`
+                    backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.55)), url('/images/hero.jpg')`
                   }}
                 >
                   <div className="relative z-10 max-w-xl space-y-2.5">
@@ -868,15 +868,33 @@ export default function App() {
             {currentPage === 'about' && (
               <div className="space-y-6">
                 <div className="text-center space-y-1.5">
-                  <h2 className="text-xl sm:text-2xl font-bold">Tentang Pengembang Aplikasi</h2>
+                  <h2 className="text-xl sm:text-2xl font-bold">About Us</h2>
                   <p className="text-xs sm:text-sm text-gray-600">Tim Mahasiswa Pengembang Platform Properti 3D</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                   {[
-                    { name: 'Fathurrahman Naufal', nim: '452024611064', role: 'Project Manager & Fullstack', desc: 'Bertanggung jawab atas arsitektur sistem web dan integrasi React.', img: '/images/rumah-fathur.jpeg' },
-                    { name: 'Naufal Aqila', nim: '442024611', role: '3D & Lumion Specialist', desc: 'Membuat pemodelan objek 3D rumah dan rendering video Lumion.', img: '/images/rumah-delon.jpeg' },
-                    { name: 'M. Davi Al Haq', nim: '452024611', role: 'UI/UX Designer', desc: 'Merancang layout antarmuka website dan mobile design figma.', img: '/images/rumah-dafi.jpeg' },
+                    {
+                      name: 'Fathurrahman Naufal',
+                      nim: '452024611064',
+                      role: 'Frontend & UI/UX System Lead',
+                      desc: 'Mengembangkan arsitektur antarmuka interaktif React, optimasi responsivitas mobile, dan integrasi logic state aplikasi.',
+                      img: '/images/pp-fathur.jpeg'
+                    },
+                    {
+                      name: 'Naufal Aqila',
+                      nim: '442024611048',
+                      role: '3D Architecture & Lumion Specialist',
+                      desc: 'Merancang pemodelan spasial fasad 3D presisi tinggi serta memproduksi animasi walkthrough rendering visual Lumion.',
+                      img: '/images/pp-delon.jpg'
+                    },
+                    {
+                      name: 'Muhammad Dafi Al Haq',
+                      nim: '452024611067',
+                      role: 'Backend & Cloud Database Engineer',
+                      desc: 'Mengelola arsitektur database realtime Cloud Firestore, validasi keamanan sistem E-KYC, dan infrastruktur deployment.',
+                      img: '/images/pp-dafi.jpeg'
+                    },
                   ].map((member, idx) => (
                     <Card key={idx} className="text-center p-4 hover:shadow-md transition-shadow">
                       <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full mx-auto mb-3 overflow-hidden border-2 border-blue-600 shadow-md">
@@ -885,7 +903,7 @@ export default function App() {
                           alt={member.name}
                           className="w-full h-full object-cover"
                           onError={(e) => {
-                            (e.target as HTMLImageElement).src = '/images/perumahan-1.jpeg';
+                            (e.target as HTMLImageElement).src = '/images/perumahan.jpg';
                           }}
                         />
                       </div>
@@ -904,7 +922,7 @@ export default function App() {
               <div
                 className="w-full min-h-[75vh] flex flex-col items-center justify-center py-8 px-3 sm:px-4 bg-cover bg-center rounded-2xl my-2 gap-5 shadow-sm"
                 style={{
-                  backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.65)), url('/images/perumahan-1.jpeg')`
+                  backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.65)), url('/images/perumahan.jpg')`
                 }}
               >
                 <div className="text-center space-y-1">
@@ -1246,10 +1264,10 @@ export default function App() {
                                 <td className="p-3 text-center">
                                   <Badge
                                     className={`text-[9px] font-bold ${u.status === 'approved'
-                                        ? 'bg-emerald-600 text-white'
-                                        : u.status === 'rejected'
-                                          ? 'bg-red-600 text-white'
-                                          : 'bg-amber-500 text-white'
+                                      ? 'bg-emerald-600 text-white'
+                                      : u.status === 'rejected'
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-amber-500 text-white'
                                       }`}
                                   >
                                     {u.status === 'approved' ? 'DI-ACC' : u.status === 'rejected' ? 'DITOLAK' : 'PENDING'}
