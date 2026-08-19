@@ -158,7 +158,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
 
-  // 1. STATE DENGAN PERSISTENSI LOCALSTORAGE (ANTI-LOGOUT SAAT REFRESH)
+  // Sesi Login Persistent
   const [currentUser, setCurrentUser] = useState<CurrentUserType | null>(() => {
     try {
       const savedUser = localStorage.getItem('delons_auth_user');
@@ -177,7 +177,7 @@ export default function App() {
 
   const [previewImageModal, setPreviewImageModal] = useState<{ title: string; src: string } | null>(null);
 
-  // Live Camera Capture
+  // Live Camera State
   const [activeCameraTarget, setActiveCameraTarget] = useState<'ktp' | 'selfie' | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
@@ -194,7 +194,7 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // Register Form States
+  // Register States
   const [regUsername, setRegUsername] = useState('');
   const [regName, setRegName] = useState('');
   const [regNik, setRegNik] = useState('');
@@ -208,7 +208,7 @@ export default function App() {
   const ktpInputRef = useRef<HTMLInputElement>(null);
   const selfieInputRef = useRef<HTMLInputElement>(null);
 
-  // 2. SINKRONISASI FIRESTORE
+  // 1. SINKRONISASI FIRESTORE
   useEffect(() => {
     const unsubProps = onSnapshot(collection(db, 'properties'), (snapshot) => {
       if (!snapshot.empty) {
@@ -243,7 +243,7 @@ export default function App() {
     };
   }, []);
 
-  // 3. PRIVACY FILTER NOTA
+  // 2. FILTER PRIVASI NOTA (User hanya melihat miliknya, Admin melihat semua)
   const visibleInvoices = currentUser?.role === 'admin'
     ? transactions
     : isLoggedIn && currentUser
@@ -262,16 +262,51 @@ export default function App() {
       })
       : [];
 
-  // 4. HELPER VERIFIKASI PASSWORD ADMIN
+  // 3. PROTEKSI PASSWORD ADMIN
   const verifyAdminPassword = (actionName: string): boolean => {
     const pass = window.prompt(`[OTORISASI ADMIN]\nMasukkan Password Admin untuk menghapus ${actionName}:`);
-    if (pass === 'admin123') {
-      return true;
-    }
-    if (pass !== null) {
-      alert('Akses Ditolak: Password Admin Salah!');
-    }
+    if (pass === 'admin123') return true;
+    if (pass !== null) alert('Akses Ditolak: Password Admin Salah!');
     return false;
+  };
+
+  // 4. HANDLER PEMBAYARAN TAGIHAN / CICILAN
+  const handlePayInstallment = async (invoiceId: string, amount: number, method: string) => {
+    const targetInvoice = transactions.find((t) => t.id === invoiceId);
+    if (!targetInvoice) return;
+
+    const oldPaid = Number(targetInvoice.downPayment || 0);
+    const totalPrice = Number(targetInvoice.totalPrice || targetInvoice.property?.price || 0);
+
+    const newPaid = oldPaid + amount;
+    const newRemaining = Math.max(0, totalPrice - newPaid);
+
+    try {
+      await updateDoc(doc(db, 'invoices', invoiceId), {
+        downPayment: newPaid,
+        remaining: newRemaining,
+        paymentMethod: method,
+        lastPaymentDate: new Date().toISOString(),
+        status: newRemaining === 0 ? 'LUNAS' : 'CICILAN'
+      });
+
+      setTransactions((prev) =>
+        prev.map((inv) =>
+          inv.id === invoiceId
+            ? {
+              ...inv,
+              downPayment: newPaid,
+              remaining: newRemaining,
+              paymentMethod: method
+            }
+            : inv
+        )
+      );
+
+      alert(`Pembayaran Berhasil Diterima!\n\nNominal Masuk: Rp ${amount.toLocaleString('id-ID')}\nSisa Tagihan: Rp ${newRemaining.toLocaleString('id-ID')}`);
+    } catch (error: any) {
+      alert('Gagal memproses pembayaran: ' + error.message);
+    }
   };
 
   // 5. LIVE CAMERA CONTROLS
@@ -283,9 +318,7 @@ export default function App() {
       setCameraStream(stream);
       setActiveCameraTarget(target);
       setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream;
       }, 200);
     } catch (err) {
       alert('Tidak dapat mengakses kamera! Berikan izin kamera pada browser Anda.');
@@ -346,12 +379,12 @@ export default function App() {
     }
 
     if (cleanUsername.length < 3) {
-      alert('Gagal: Username minimal 3 karakter (hanya huruf, angka, atau underscore)!');
+      alert('Gagal: Username minimal 3 karakter!');
       return;
     }
 
     if (cleanNik.length !== 16) {
-      alert('Gagal: NIK harus berupa 16 digit angka sesuai KTP fisik!');
+      alert('Gagal: NIK harus berupa 16 digit angka sesuai KTP!');
       return;
     }
 
@@ -361,7 +394,7 @@ export default function App() {
     }
 
     if (!cleanPhone.startsWith('08') || cleanPhone.length < 10) {
-      alert('Gagal: Format Nomor WhatsApp wajib 08xxxxxxxxxx (minimal 10 digit).');
+      alert('Gagal: Format Nomor WhatsApp wajib 08xxxxxxxxxx.');
       return;
     }
 
@@ -371,27 +404,19 @@ export default function App() {
     }
 
     if (!regKtpImage || !regSelfieImage) {
-      alert('Gagal: Wajib melampirkan Foto E-KTP dan Foto Wajah (Selfie)!');
+      alert('Gagal: Wajib melampirkan Foto E-KTP dan Foto Wajah!');
       return;
     }
 
     const finalEmail = cleanEmailInput.includes('@') ? cleanEmailInput : `${cleanEmailInput}@gmail.com`;
 
-    const isUsernameExist = registeredUsers.some(u => u.username?.toLowerCase() === cleanUsername);
-    if (isUsernameExist) {
-      alert(`Gagal: Username "${cleanUsername}" sudah digunakan orang lain. Pilih username lain!`);
+    if (registeredUsers.some(u => u.username?.toLowerCase() === cleanUsername)) {
+      alert(`Gagal: Username "${cleanUsername}" sudah digunakan!`);
       return;
     }
 
-    const isEmailExist = registeredUsers.some(u => u.email?.toLowerCase() === finalEmail);
-    if (isEmailExist) {
+    if (registeredUsers.some(u => u.email?.toLowerCase() === finalEmail)) {
       alert(`Gagal: Email "${finalEmail}" sudah terdaftar.`);
-      return;
-    }
-
-    const isNikExist = registeredUsers.some(u => u.nik && u.nik === cleanNik);
-    if (isNikExist) {
-      alert('Gagal: NIK KTP ini sudah terdaftar di database!');
       return;
     }
 
@@ -414,7 +439,7 @@ export default function App() {
 
     try {
       await setDoc(doc(db, 'users', newUserId), newUserData);
-      alert(`Pendaftaran Berhasil!\n\nUsername Anda: ${cleanUsername}\nStatus: MENUNGGU VERIFIKASI (PENDING).\nAkun Anda belum bisa login sebelum disetujui (ACC) oleh Administrator.`);
+      alert(`Pendaftaran Berhasil!\n\nUsername: ${cleanUsername}\nStatus: MENUNGGU ACC ADMIN.`);
 
       setLoginEmail(cleanUsername);
       setLoginPassword(cleanPassword);
@@ -435,10 +460,10 @@ export default function App() {
     }
   };
 
-  // 7. AUTENTIKASI LOGIN (SIMPAN KE LOCALSTORAGE)
+  // 7. AUTENTIKASI LOGIN
   const handleLoginSubmit = () => {
     if (!loginEmail.trim() || !loginPassword.trim()) {
-      alert('Silakan masukkan email/username dan password terlebih dahulu!');
+      alert('Silakan masukkan email/username dan password!');
       return;
     }
 
@@ -457,7 +482,6 @@ export default function App() {
         status: 'approved'
       };
 
-      // Simpan Sesi Admin
       localStorage.setItem('delons_auth_user', JSON.stringify(adminData));
       setCurrentUser(adminData);
       setIsLoggedIn(true);
@@ -477,17 +501,17 @@ export default function App() {
     );
 
     if (!matchedUser) {
-      alert('Kredensial tidak valid! Username/Email tidak ditemukan di database atau password salah.');
+      alert('Kredensial tidak valid! Username/Email atau Password salah.');
       return;
     }
 
     if (matchedUser.status === 'pending') {
-      alert('AKUN BELUM DI-ACC ADMIN!\n\nIdentitas E-KTP & Foto Wajah Anda sedang dalam antrean verifikasi Admin.');
+      alert('AKUN BELUM DI-ACC ADMIN!\n\nIdentitas Anda sedang dalam antrean verifikasi.');
       return;
     }
 
     if (matchedUser.status === 'rejected') {
-      alert('AKUN DITOLAK!\n\nPengajuan registrasi identitas Anda ditolak oleh Admin.');
+      alert('AKUN DITOLAK!\n\nDokumen verifikasi Anda ditolak oleh Admin.');
       return;
     }
 
@@ -504,7 +528,6 @@ export default function App() {
       selfieImage: matchedUser.selfieImage
     };
 
-    // Simpan Sesi User ke LocalStorage
     localStorage.setItem('delons_auth_user', JSON.stringify(verifiedUser));
     setCurrentUser(verifiedUser);
     setIsLoggedIn(true);
@@ -512,7 +535,6 @@ export default function App() {
     alert(`Login Berhasil! Selamat datang, ${verifiedUser.fullName}.`);
   };
 
-  // 8. LOGOUT (HAPUS DARI LOCALSTORAGE)
   const handleLogout = () => {
     localStorage.removeItem('delons_auth_user');
     setIsLoggedIn(false);
@@ -521,11 +543,11 @@ export default function App() {
     alert('Anda telah berhasil Logout.');
   };
 
-  // 9. UPDATE STATUS & HAPUS
+  // 8. ADMIN ACTIONS
   const handleUpdateUserStatus = async (userId: string, newStatus: 'approved' | 'rejected') => {
     try {
       await updateDoc(doc(db, 'users', userId), { status: newStatus });
-      alert(`Akun berhasil ${newStatus === 'approved' ? 'DI-ACC (Disetujui)' : 'DIBLOKIR'}!`);
+      alert(`Akun berhasil ${newStatus === 'approved' ? 'DI-ACC' : 'DIBLOKIR'}!`);
     } catch (e: any) {
       alert('Gagal update status: ' + e.message);
     }
@@ -535,7 +557,7 @@ export default function App() {
     if (!verifyAdminPassword(`Akun Pengguna "${userName}"`)) return;
     try {
       await deleteDoc(doc(db, 'users', userId));
-      alert(`Akun "${userName}" berhasil dihapus permanen dari Firestore.`);
+      alert(`Akun "${userName}" berhasil dihapus permanen.`);
     } catch (e: any) {
       alert('Gagal menghapus user: ' + e.message);
     }
@@ -546,7 +568,7 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'properties', propertyId));
       setProperties((prev) => prev.filter((p) => p.id !== propertyId));
-      alert(`Unit properti "${propertyTitle}" berhasil dihapus dari katalog.`);
+      alert(`Unit properti "${propertyTitle}" berhasil dihapus.`);
     } catch (e: any) {
       alert('Gagal menghapus properti: ' + e.message);
     }
@@ -563,7 +585,7 @@ export default function App() {
     }
   };
 
-  // 10. PEMBUATAN NOTA TRANSAKSI
+  // 9. ORDER PROPERTI
   const handleCreateInvoice = async (property: Property, buyerData: any, paymentData: any) => {
     if (!isLoggedIn || !currentUser) {
       alert('Akses Ditolak: Anda wajib Login terlebih dahulu sebelum memesan properti!');
@@ -643,11 +665,10 @@ export default function App() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center overflow-x-hidden">
       <div className="w-full bg-white shadow-xl min-h-screen max-w-7xl flex flex-col justify-between">
 
-        {/* NAVBAR RESPONSIVE */}
+        {/* NAVBAR */}
         <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2">
 
-            {/* Logo */}
             <div className="flex items-center gap-2 cursor-pointer shrink-0" onClick={() => setCurrentPage('home')}>
               <img
                 src="/images/logo-app.png"
@@ -663,7 +684,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Desktop Menu */}
             <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
               <button onClick={() => setCurrentPage('home')} className={`transition-colors duration-200 hover:text-blue-600 ${currentPage === 'home' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Home</button>
               <button onClick={() => setCurrentPage('services')} className={`transition-colors duration-200 hover:text-blue-600 ${currentPage === 'services' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>Layanan</button>
@@ -683,7 +703,6 @@ export default function App() {
               )}
             </nav>
 
-            {/* Action Bar Kanan */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <Button
                 size="sm"
@@ -951,8 +970,6 @@ export default function App() {
 
                   <CardContent className="p-4 sm:p-6 space-y-4 pt-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-
-                      {/* INPUT USERNAME */}
                       <div>
                         <label className="font-semibold text-gray-700 flex items-center gap-1">
                           <AtSign className="size-3 text-blue-600" /> Username Akun (Untuk Login)
@@ -1033,8 +1050,6 @@ export default function App() {
                       <p className="text-xs font-bold text-gray-800">Lampiran Dokumen Identitas (Wajib)</p>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-
-                        {/* BOX KTP */}
                         <div className="border border-gray-200 rounded-xl p-3 space-y-2 bg-gray-50/60">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-gray-700">1. Foto Fisik E-KTP</span>
@@ -1081,7 +1096,6 @@ export default function App() {
                           />
                         </div>
 
-                        {/* BOX SELFIE */}
                         <div className="border border-gray-200 rounded-xl p-3 space-y-2 bg-gray-50/60">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-gray-700">2. Foto Wajah (Selfie)</span>
@@ -1127,7 +1141,6 @@ export default function App() {
                             onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'selfie')}
                           />
                         </div>
-
                       </div>
                     </div>
 
@@ -1146,7 +1159,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 7. CONTROL PANEL ADMIN LENGKAP */}
+            {/* 7. CONTROL PANEL ADMIN */}
             {currentPage === 'admin' && currentUser?.role === 'admin' && (
               <div className="space-y-4 sm:space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 bg-purple-50 border border-purple-200 p-3.5 sm:p-4 rounded-2xl">
@@ -1155,7 +1168,6 @@ export default function App() {
                     <p className="text-[11px] sm:text-xs text-purple-700">Kelola Pengguna, Unit Rumah, dan Nota dengan Proteksi Password Admin.</p>
                   </div>
 
-                  {/* Tab Selector Admin */}
                   <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-purple-200">
                     <button
                       onClick={() => setAdminTab('users')}
@@ -1397,19 +1409,20 @@ export default function App() {
               </div>
             )}
 
-            {/* 8. INVOICE */}
+            {/* 8. INVOICE (DENGAN HANDLER BAYAR CICILAN & HAPUS NOTA) */}
             {currentPage === 'invoice' && (
               <SalesInvoice
                 invoices={visibleInvoices as any}
                 onBack={() => setCurrentPage('home')}
                 isAdmin={currentUser?.role === 'admin'}
                 onDeleteInvoice={handleDeleteInvoice}
+                onPayInstallment={handlePayInstallment}
               />
             )}
           </div>
         </main>
 
-        {/* MODAL POPUP PREVIEW FOTO */}
+        {/* MODAL PREVIEW FOTO */}
         {previewImageModal && (
           <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3">
             <div className="bg-white rounded-2xl p-4 max-w-lg w-full space-y-3 shadow-2xl">

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import {
   Building2, Printer, Calendar, User, Phone, Mail,
-  MapPin, CreditCard, ShieldCheck, CheckCircle2, FileText, ArrowLeft, Trash2
+  MapPin, CreditCard, ShieldCheck, CheckCircle2, FileText, ArrowLeft, Trash2,
+  Clock, Wallet, ArrowRight, X, AlertCircle
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { Input } from './ui/input';
 
 export interface InvoiceData {
   id: string;
@@ -21,6 +23,8 @@ export interface InvoiceData {
   downPayment?: number;
   paymentMethod?: string;
   totalPrice?: number;
+  remaining?: number;
+  deadline?: any;
   date?: any;
   createdAt?: any;
   buyer?: {
@@ -47,6 +51,7 @@ interface SalesInvoiceProps {
   onBack?: () => void;
   isAdmin?: boolean;
   onDeleteInvoice?: (id: string) => void;
+  onPayInstallment?: (invoiceId: string, amount: number, method: string) => void;
 }
 
 const formatTanggalIndonesia = (rawDate: any): string => {
@@ -82,14 +87,41 @@ const formatTanggalIndonesia = (rawDate: any): string => {
   });
 };
 
+const hitungDeadline = (rawDate: any): string => {
+  let baseDate = new Date();
+  if (rawDate) {
+    if (typeof rawDate === 'object' && rawDate.seconds !== undefined) {
+      baseDate = new Date(rawDate.seconds * 1000);
+    } else {
+      const parsed = new Date(rawDate);
+      if (!isNaN(parsed.getTime())) baseDate = parsed;
+    }
+  }
+  // Tambahkan 30 hari sebagai tenggat waktu cicilan berikutnya
+  const deadlineDate = new Date(baseDate);
+  deadlineDate.setDate(deadlineDate.getDate() + 30);
+
+  return deadlineDate.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+};
+
 export default function SalesInvoice({
   invoices = [],
   onBack,
   isAdmin = false,
-  onDeleteInvoice
+  onDeleteInvoice,
+  onPayInstallment
 }: SalesInvoiceProps) {
   const invoiceList: InvoiceData[] = Array.isArray(invoices) ? (invoices as InvoiceData[]) : [];
   const [selectedId, setSelectedId] = useState<string | null>(invoiceList[0]?.id || null);
+
+  // Modal State Lanjut Bayar
+  const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
+  const [installmentAmount, setInstallmentAmount] = useState<string>('');
+  const [installmentMethod, setInstallmentMethod] = useState<string>('Transfer Bank (BCA / Mandiri / BRI)');
 
   const activeInvoice: InvoiceData | undefined =
     invoiceList.find((inv: InvoiceData) => inv.id === selectedId) || invoiceList[0];
@@ -100,11 +132,11 @@ export default function SalesInvoice({
 
   if (invoiceList.length === 0) {
     return (
-      <div className="bg-white rounded-2xl p-10 text-center border border-gray-200 shadow-sm max-w-xl mx-auto my-8">
+      <div className="bg-white rounded-2xl p-8 sm:p-10 text-center border border-gray-200 shadow-sm max-w-xl mx-auto my-8">
         <FileText className="size-14 text-gray-300 mx-auto mb-3" />
-        <h3 className="text-base sm:text-lg font-bold text-gray-800">Belum Ada Riwayat Nota Transaksi</h3>
-        <p className="text-xs text-gray-500 mt-1 mb-5">
-          Silakan pesan unit properti 3D di katalog untuk menerbitkan nota resmi otomatis akun Anda.
+        <h3 className="text-base sm:text-lg font-bold text-gray-800">Belum Ada Riwayat Nota & Tagihan</h3>
+        <p className="text-xs text-gray-500 mt-1 mb-5 leading-relaxed">
+          Silakan pesan unit properti 3D di katalog untuk menerbitkan lembar nota resmi dan memantau status tagihan.
         </p>
         {onBack && (
           <Button onClick={onBack} className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
@@ -129,6 +161,29 @@ export default function SalesInvoice({
   );
 
   const sisaPelunasan = Math.max(0, totalHarga - totalDp);
+  const persentaseLunas = totalHarga > 0 ? Math.min(100, Math.round((totalDp / totalHarga) * 100)) : 0;
+  const isLunas = sisaPelunasan === 0;
+
+  const handleProcessPayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amountNum = Number(installmentAmount.replace(/\D/g, ''));
+
+    if (amountNum <= 0) {
+      alert('Gagal: Nominal pembayaran harus lebih dari Rp 0!');
+      return;
+    }
+
+    if (amountNum > sisaPelunasan) {
+      alert(`Gagal: Nominal pembayaran tidak boleh melebihi sisa tagihan (Rp ${sisaPelunasan.toLocaleString('id-ID')})!`);
+      return;
+    }
+
+    if (activeInvoice && onPayInstallment) {
+      onPayInstallment(activeInvoice.id, amountNum, installmentMethod);
+      setShowPaymentModal(false);
+      setInstallmentAmount('');
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto p-2 sm:p-6 space-y-5">
@@ -142,8 +197,8 @@ export default function SalesInvoice({
             </Button>
           )}
           <div>
-            <h2 className="text-base sm:text-xl font-extrabold text-gray-900 tracking-tight">Lembar Nota & Bukti Transaksi</h2>
-            <p className="text-[11px] sm:text-xs text-gray-500">Dokumen transaksi kepemilikan unit Delon Clusters 3D</p>
+            <h2 className="text-base sm:text-xl font-extrabold text-gray-900 tracking-tight">Lembar Nota & Status Tagihan</h2>
+            <p className="text-[11px] sm:text-xs text-gray-500">Pantau progres pembayaran dan pelunasan kepemilikan unit Delon Clusters 3D</p>
           </div>
         </div>
 
@@ -154,7 +209,7 @@ export default function SalesInvoice({
               onClick={() => onDeleteInvoice(activeInvoice.id)}
               className="text-red-600 border-red-200 hover:bg-red-50 text-xs gap-1.5 h-9"
             >
-              <Trash2 className="size-3.5" /> Hapus Nota Ini
+              <Trash2 className="size-3.5" /> Hapus Nota
             </Button>
           )}
           <Button
@@ -164,6 +219,74 @@ export default function SalesInvoice({
             <Printer className="size-3.5" /> Cetak / PDF
           </Button>
         </div>
+      </div>
+
+      {/* PANEL STATUS TAGIHAN & LANJUT BAYAR (ACTIVE NOTA) */}
+      <div className="bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 text-white rounded-2xl p-4 sm:p-6 shadow-md border border-blue-700 print:hidden space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-blue-700/60 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-blue-500/20 rounded-xl border border-blue-400/30">
+              <Wallet className="size-5 text-blue-300" />
+            </div>
+            <div>
+              <span className="text-[10px] text-blue-200 uppercase font-mono tracking-wider">No. Registrasi: {activeInvoice?.id}</span>
+              <h3 className="text-base sm:text-lg font-bold">{activeInvoice?.propertyTitle || 'Unit Delon Clusters 3D'}</h3>
+            </div>
+          </div>
+
+          <Badge className={`text-xs font-bold px-3 py-1 ${isLunas ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-amber-950'}`}>
+            {isLunas ? 'LUNAS (HAK MILIK PENUH)' : 'BELUM LUNAS (DALAM CICILAN)'}
+          </Badge>
+        </div>
+
+        {/* Grid Angka Tagihan */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <div className="bg-white/10 rounded-xl p-3.5 border border-white/10 backdrop-blur-sm">
+            <span className="text-[11px] text-blue-200">Total Harga Unit:</span>
+            <p className="text-base sm:text-lg font-black mt-0.5">Rp {totalHarga.toLocaleString('id-ID')}</p>
+          </div>
+
+          <div className="bg-white/10 rounded-xl p-3.5 border border-white/10 backdrop-blur-sm">
+            <span className="text-[11px] text-emerald-300">Total Terbayar (DP + Cicilan):</span>
+            <p className="text-base sm:text-lg font-black text-emerald-300 mt-0.5">Rp {totalDp.toLocaleString('id-ID')}</p>
+          </div>
+
+          <div className="bg-white/10 rounded-xl p-3.5 border border-white/10 backdrop-blur-sm">
+            <span className="text-[11px] text-amber-200 font-semibold">Sisa Tagihan yang Harus Dibayar:</span>
+            <p className="text-base sm:text-lg font-black text-amber-300 mt-0.5">Rp {sisaPelunasan.toLocaleString('id-ID')}</p>
+          </div>
+        </div>
+
+        {/* Progress Bar & Deadline Info */}
+        <div className="space-y-2 pt-1">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-blue-200">Progres Pelunasan: <b className="text-white font-bold">{persentaseLunas}%</b></span>
+            <span className="text-blue-200 flex items-center gap-1">
+              <Clock className="size-3.5 text-amber-300" /> Deadline Cicilan: <b className="text-white font-bold">{hitungDeadline(activeInvoice?.date || activeInvoice?.createdAt)}</b>
+            </span>
+          </div>
+          <div className="w-full bg-blue-950/60 rounded-full h-2.5 overflow-hidden border border-blue-700/50">
+            <div
+              className={`h-full transition-all duration-500 rounded-full ${isLunas ? 'bg-emerald-400' : 'bg-gradient-to-r from-amber-400 to-emerald-400'}`}
+              style={{ width: `${persentaseLunas}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Action Button Lanjut Bayar */}
+        {!isLunas && (
+          <div className="pt-2 flex justify-end">
+            <Button
+              onClick={() => {
+                setInstallmentAmount(String(Math.min(sisaPelunasan, 25000000)));
+                setShowPaymentModal(true);
+              }}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-lg gap-2"
+            >
+              <CreditCard className="size-4" /> Lanjut Bayar Tagihan / Pelunasan <ArrowRight className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
@@ -182,6 +305,11 @@ export default function SalesInvoice({
           <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
             {invoiceList.map((inv: InvoiceData) => {
               const isSelected = (inv.id === (activeInvoice?.id || ''));
+              const invTotal = Number(inv.totalPrice || inv.propertyPrice || inv.property?.price || 0);
+              const invPaid = Number(inv.downPayment || inv.payment?.downPayment || 0);
+              const invSisa = Math.max(0, invTotal - invPaid);
+              const invLunas = invSisa === 0;
+
               return (
                 <div
                   key={inv.id}
@@ -193,7 +321,9 @@ export default function SalesInvoice({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-bold text-xs text-blue-700">{inv.id}</span>
-                    <Badge className="bg-emerald-600 text-white text-[9px] py-0">Terbit</Badge>
+                    <Badge className={`text-[9px] py-0 ${invLunas ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'}`}>
+                      {invLunas ? 'Lunas' : 'Belum Lunas'}
+                    </Badge>
                   </div>
                   <p className="font-bold text-gray-800 text-xs mt-1 truncate">
                     {inv.buyerName || inv.buyer?.name || 'Pembeli'}
@@ -204,7 +334,7 @@ export default function SalesInvoice({
                       {formatTanggalIndonesia(inv.date || inv.createdAt)}
                     </span>
                     <span className="font-semibold text-gray-700">
-                      DP: Rp {Number(inv.downPayment || inv.payment?.downPayment || 0).toLocaleString('id-ID')}
+                      Sisa: Rp {invSisa.toLocaleString('id-ID')}
                     </span>
                   </div>
                 </div>
@@ -213,7 +343,7 @@ export default function SalesInvoice({
           </div>
         </div>
 
-        {/* Kolom Kanan: Lembar Fisik Nota */}
+        {/* Kolom Kanan: Lembar Fisik Nota Resmi */}
         <div className="lg:col-span-8 bg-white rounded-2xl p-4 sm:p-8 border border-gray-200 shadow-md print:border-none print:shadow-none print:p-0">
 
           {/* Header Surat */}
@@ -244,10 +374,11 @@ export default function SalesInvoice({
             </div>
             <div className="text-right">
               <p className="text-gray-500">Status Pembayaran:</p>
-              <span className="inline-block mt-0.5 px-2.5 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded text-[10px] sm:text-xs border border-emerald-300">
-                BOOKING & DP VALID
+              <span className={`inline-block mt-0.5 px-2.5 py-0.5 font-bold rounded text-[10px] sm:text-xs border ${isLunas ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300'
+                }`}>
+                {isLunas ? 'LUNAS - HAK MILIK RESMI' : 'DP & CICILAN TERVERIFIKASI'}
               </span>
-              <p className="text-gray-500 mt-1.5">Metode Bayar:</p>
+              <p className="text-gray-500 mt-1.5">Metode Bayar Terakhir:</p>
               <p className="font-semibold text-gray-800 text-[11px]">
                 {activeInvoice?.paymentMethod || activeInvoice?.payment?.paymentMethod || 'Transfer Bank'}
               </p>
@@ -285,25 +416,25 @@ export default function SalesInvoice({
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-gray-300 text-gray-500 text-left">
-                  <th className="pb-1.5">Deskripsi</th>
+                  <th className="pb-1.5">Deskripsi Alokasi</th>
                   <th className="pb-1.5 text-right">Nominal (Rupiah)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 font-medium">
                 <tr>
-                  <td className="py-2 text-gray-800">Total Harga Unit</td>
+                  <td className="py-2 text-gray-800">Total Harga Unit Properti</td>
                   <td className="py-2 text-right font-bold text-gray-900">
                     Rp {totalHarga.toLocaleString('id-ID')}
                   </td>
                 </tr>
                 <tr>
-                  <td className="py-2 text-emerald-700">Uang Muka (DP) Terbayar</td>
+                  <td className="py-2 text-emerald-700 font-semibold">Total Pembayaran Masuk (DP & Cicilan)</td>
                   <td className="py-2 text-right font-bold text-emerald-700">
                     - Rp {totalDp.toLocaleString('id-ID')}
                   </td>
                 </tr>
                 <tr className="bg-blue-50/70 font-black text-xs sm:text-sm">
-                  <td className="p-2.5 text-blue-950">Sisa Pelunasan / Akad KPR</td>
+                  <td className="p-2.5 text-blue-950">Sisa Tagihan / Pelunasan KPR</td>
                   <td className="p-2.5 text-right text-blue-600">
                     Rp {sisaPelunasan.toLocaleString('id-ID')}
                   </td>
@@ -340,6 +471,99 @@ export default function SalesInvoice({
 
         </div>
       </div>
+
+      {/* MODAL LANJUT BAYAR / CICILAN */}
+      {showPaymentModal && activeInvoice && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-3">
+          <div className="bg-white rounded-2xl p-5 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h4 className="font-bold text-sm text-gray-900">Pembayaran Tagihan / Cicilan</h4>
+                <p className="text-[11px] text-gray-500">{activeInvoice.propertyTitle}</p>
+              </div>
+              <button onClick={() => setShowPaymentModal(false)} className="text-gray-400 hover:text-gray-700">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl space-y-1 text-xs">
+              <div className="flex justify-between text-amber-900">
+                <span>Sisa Tagihan Saat Ini:</span>
+                <b className="text-blue-700 font-bold">Rp {sisaPelunasan.toLocaleString('id-ID')}</b>
+              </div>
+              <div className="flex justify-between text-amber-800 text-[11px]">
+                <span>Tenggat Waktu (Deadline):</span>
+                <b>{hitungDeadline(activeInvoice.date || activeInvoice.createdAt)}</b>
+              </div>
+            </div>
+
+            <form onSubmit={handleProcessPayment} className="space-y-3.5 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-semibold text-gray-700">Nominal Pembayaran Lanjutan</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-xs font-bold text-gray-500">Rp</span>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    required
+                    value={installmentAmount}
+                    onChange={(e) => setInstallmentAmount(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Masukkan nominal..."
+                    className="pl-9 font-bold text-gray-900 text-sm"
+                  />
+                </div>
+                <div className="flex gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setInstallmentAmount('10000000')}
+                    className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-[10px] font-semibold text-gray-700"
+                  >
+                    Rp 10 Jt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInstallmentAmount('25000000')}
+                    className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-[10px] font-semibold text-gray-700"
+                  >
+                    Rp 25 Jt
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInstallmentAmount(String(sisaPelunasan))}
+                    className="px-2 py-1 bg-emerald-100 hover:bg-emerald-200 rounded text-[10px] font-bold text-emerald-800 ml-auto"
+                  >
+                    Lunasi Semua (Rp {sisaPelunasan.toLocaleString('id-ID')})
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-semibold text-gray-700">Metode Penyaluran Dana</label>
+                <select
+                  value={installmentMethod}
+                  onChange={(e) => setInstallmentMethod(e.target.value)}
+                  className="w-full p-2.5 border rounded-lg text-xs bg-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="Transfer Bank (BCA / Mandiri / BRI)">Transfer Bank Otomatis (BCA / Mandiri / BRI)</option>
+                  <option value="Virtual Account Realtime">Virtual Account 24 Jam (VA)</option>
+                  <option value="QRIS Dynamic Payment">QRIS Instant Payment</option>
+                  <option value="KPR Developer Cicilan Bertahap">KPR In-House (Cicilan Bertahap)</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t">
+                <Button type="button" variant="outline" onClick={() => setShowPaymentModal(false)} className="flex-1 text-xs">
+                  Batal
+                </Button>
+                <Button type="submit" className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5">
+                  Konfirmasi Pembayaran
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
