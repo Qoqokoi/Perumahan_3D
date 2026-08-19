@@ -10,7 +10,7 @@ import SalesInvoice from './components/SalesInvoice';
 import {
   Home, Search, FileText, User, LogIn,
   Video, Users, Building2, Phone, MessageCircle, Mail, MapPin,
-  CheckCircle, ShieldCheck, Camera, Upload, Image as ImageIcon, X, AlertCircle, Check, Ban, Trash2, Plus
+  CheckCircle, ShieldCheck, Camera, Upload, Image as ImageIcon, X, AlertCircle, Check, Ban, Trash2, AtSign
 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -52,6 +52,7 @@ export interface Transaction {
 
 export interface CurrentUserType {
   fullName: string;
+  username: string;
   nik: string;
   email: string;
   phone: string;
@@ -181,6 +182,8 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
+  // Register Form States (Termasuk Username Input)
+  const [regUsername, setRegUsername] = useState('');
   const [regName, setRegName] = useState('');
   const [regNik, setRegNik] = useState('');
   const [regPhone, setRegPhone] = useState('');
@@ -193,7 +196,7 @@ export default function App() {
   const ktpInputRef = useRef<HTMLInputElement>(null);
   const selfieInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. SINKRONISASI FIRESTORE (Realtime Properties, Users, Invoices)
+  // 1. SINKRONISASI FIRESTORE
   useEffect(() => {
     const unsubProps = onSnapshot(collection(db, 'properties'), (snapshot) => {
       if (!snapshot.empty) {
@@ -247,7 +250,7 @@ export default function App() {
       })
       : [];
 
-  // 3. HELPER VERIFIKASI PASSWORD ADMIN (ADMIN PROTECTION)
+  // 3. HELPER VERIFIKASI PASSWORD ADMIN
   const verifyAdminPassword = (actionName: string): boolean => {
     const pass = window.prompt(`[OTORISASI ADMIN]\nMasukkan Password Admin untuk menghapus ${actionName}:`);
     if (pass === 'admin123') {
@@ -315,8 +318,9 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // 5. REGISTRASI E-KYC
+  // 5. REGISTRASI E-KYC DENGAN USERNAME
   const handleRegisterSubmit = async () => {
+    const cleanUsername = regUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
     const cleanNik = regNik.replace(/\D/g, '').trim();
     const cleanName = regName.trim();
     const cleanPhone = regPhone.replace(/\D/g, '').trim();
@@ -324,8 +328,13 @@ export default function App() {
     const cleanEmailInput = regEmail.trim().toLowerCase();
     const cleanPassword = regPassword.trim();
 
-    if (!cleanNik || !cleanName || !cleanPhone || !cleanAddress || !cleanEmailInput || !cleanPassword) {
-      alert('Gagal: Seluruh data pendaftaran wajib diisi lengkap!');
+    if (!cleanUsername || !cleanNik || !cleanName || !cleanPhone || !cleanAddress || !cleanEmailInput || !cleanPassword) {
+      alert('Gagal: Seluruh data pendaftaran (termasuk Username) wajib diisi lengkap!');
+      return;
+    }
+
+    if (cleanUsername.length < 3) {
+      alert('Gagal: Username minimal 3 karakter (hanya huruf, angka, atau underscore)!');
       return;
     }
 
@@ -355,29 +364,35 @@ export default function App() {
     }
 
     const finalEmail = cleanEmailInput.includes('@') ? cleanEmailInput : `${cleanEmailInput}@gmail.com`;
-    const username = cleanEmailInput.includes('@') ? cleanEmailInput.split('@')[0] : cleanEmailInput;
 
-    const isExist = registeredUsers.some(
-      (u) =>
-        u.email?.toLowerCase() === finalEmail ||
-        u.username?.toLowerCase() === username ||
-        (u.nik && u.nik === cleanNik)
-    );
+    // Validasi duplikasi username, email, dan NIK
+    const isUsernameExist = registeredUsers.some(u => u.username?.toLowerCase() === cleanUsername);
+    if (isUsernameExist) {
+      alert(`Gagal: Username "${cleanUsername}" sudah digunakan orang lain. Silakan pilih username lain!`);
+      return;
+    }
 
-    if (isExist) {
-      alert('Gagal: NIK, Email, atau Username ini sudah terdaftar! Silakan Login.');
+    const isEmailExist = registeredUsers.some(u => u.email?.toLowerCase() === finalEmail);
+    if (isEmailExist) {
+      alert(`Gagal: Email "${finalEmail}" sudah terdaftar. Silakan gunakan email lain atau langsung Login!`);
+      return;
+    }
+
+    const isNikExist = registeredUsers.some(u => u.nik && u.nik === cleanNik);
+    if (isNikExist) {
+      alert('Gagal: NIK KTP ini sudah terdaftar di database!');
       return;
     }
 
     const newUserId = `USR-${Date.now().toString().slice(-6)}`;
     const newUserData = {
       id: newUserId,
+      username: cleanUsername,
       fullName: cleanName,
       nik: cleanNik,
       phone: cleanPhone,
       address: cleanAddress,
       email: finalEmail,
-      username: username,
       password: cleanPassword,
       ktpImage: regKtpImage,
       selfieImage: regSelfieImage,
@@ -388,11 +403,12 @@ export default function App() {
 
     try {
       await setDoc(doc(db, 'users', newUserId), newUserData);
-      alert('Pendaftaran Berhasil!\n\nStatus Akun: MENUNGGU VERIFIKASI (PENDING).\nAkun Anda belum bisa login sebelum disetujui (ACC) oleh Administrator.');
+      alert(`Pendaftaran Berhasil!\n\nUsername Anda: ${cleanUsername}\nStatus: MENUNGGU VERIFIKASI (PENDING).\nAkun Anda belum bisa login sebelum disetujui (ACC) oleh Administrator.`);
 
-      setLoginEmail(finalEmail);
+      setLoginEmail(cleanUsername);
       setLoginPassword(cleanPassword);
 
+      setRegUsername('');
       setRegName('');
       setRegNik('');
       setRegPhone('');
@@ -408,7 +424,7 @@ export default function App() {
     }
   };
 
-  // 6. AUTENTIKASI LOGIN
+  // 6. AUTENTIKASI LOGIN (BISA PAKAI USERNAME ATAU EMAIL)
   const handleLoginSubmit = () => {
     if (!loginEmail.trim() || !loginPassword.trim()) {
       alert('Silakan masukkan email/username dan password terlebih dahulu!');
@@ -421,6 +437,7 @@ export default function App() {
     if ((inputId === 'admin' || inputId === 'admin@delonclusters.com') && inputPass === 'admin123') {
       const adminData: CurrentUserType = {
         fullName: 'Administrator Delons',
+        username: 'admin',
         nik: '3502000000000001',
         email: 'admin@delonclusters.com',
         phone: '081234567890',
@@ -437,16 +454,17 @@ export default function App() {
 
     const formattedEmail = inputId.includes('@') ? inputId : `${inputId}@gmail.com`;
 
+    // Pencocokan akun via username atau email
     const matchedUser = registeredUsers.find(
       (u) =>
-        (u.email?.toLowerCase() === inputId ||
-          u.email?.toLowerCase() === formattedEmail ||
-          u.username?.toLowerCase() === inputId) &&
+        (u.username?.toLowerCase() === inputId ||
+          u.email?.toLowerCase() === inputId ||
+          u.email?.toLowerCase() === formattedEmail) &&
         u.password === inputPass
     );
 
     if (!matchedUser) {
-      alert('Kredensial tidak valid! Akun tidak ditemukan di database atau password salah.');
+      alert('Kredensial tidak valid! Username/Email tidak ditemukan di database atau password salah.');
       return;
     }
 
@@ -462,6 +480,7 @@ export default function App() {
 
     const verifiedUser: CurrentUserType = {
       fullName: matchedUser.fullName || matchedUser.name || 'User Delons',
+      username: matchedUser.username || inputId,
       nik: matchedUser.nik || '3502xxxxxxxxxxxx',
       email: matchedUser.email || formattedEmail,
       phone: matchedUser.phone || '081234567890',
@@ -475,10 +494,10 @@ export default function App() {
     setCurrentUser(verifiedUser);
     setIsLoggedIn(true);
     setCurrentPage('home');
-    alert(`Login Berhasil! Selamat datang, ${verifiedUser.fullName}.`);
+    alert(`Login Berhasil! Selamat datang, ${verifiedUser.fullName} (@${verifiedUser.username}).`);
   };
 
-  // 7. PENGHAPUSAN DENGAN PROTEKSI PASSWORD ADMIN
+  // 7. PENGHAPUSAN DENGAN PASSWORD ADMIN
   const handleUpdateUserStatus = async (userId: string, newStatus: 'approved' | 'rejected') => {
     try {
       await updateDoc(doc(db, 'users', userId), { status: newStatus });
@@ -865,9 +884,9 @@ export default function App() {
                   </CardHeader>
                   <CardContent className="p-4 sm:p-6 pt-2 space-y-3.5">
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-gray-700">Email / Username</label>
+                      <label className="text-xs font-semibold text-gray-700">Email atau Username</label>
                       <Input
-                        placeholder="Masukkan email atau username..."
+                        placeholder="Contoh: fathur24 atau fathur@gmail.com"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         className="text-xs"
@@ -897,7 +916,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 6. REGISTER */}
+            {/* 6. REGISTER (DENGAN INPUT USERNAME KHUSUS) */}
             {currentPage === 'register' && (
               <div className="max-w-xl mx-auto py-3 sm:py-6">
                 <Card className="shadow-lg border border-gray-200">
@@ -913,6 +932,30 @@ export default function App() {
 
                   <CardContent className="p-4 sm:p-6 space-y-4 pt-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+
+                      {/* INPUT USERNAME */}
+                      <div>
+                        <label className="font-semibold text-gray-700 flex items-center gap-1">
+                          <AtSign className="size-3 text-blue-600" /> Username Akun (Untuk Login)
+                        </label>
+                        <Input
+                          placeholder="Contoh: fathur24"
+                          value={regUsername}
+                          onChange={(e) => setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                          className="text-xs mt-1 font-mono font-semibold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-gray-700">Nama Lengkap (Sesuai KTP)</label>
+                        <Input
+                          placeholder="Nama lengkap..."
+                          value={regName}
+                          onChange={(e) => setRegName(e.target.value)}
+                          className="text-xs mt-1"
+                        />
+                      </div>
+
                       <div>
                         <label className="font-semibold text-gray-700">NIK (16 Digit KTP)</label>
                         <Input
@@ -923,15 +966,7 @@ export default function App() {
                           className="text-xs mt-1 font-mono font-bold"
                         />
                       </div>
-                      <div>
-                        <label className="font-semibold text-gray-700">Nama Lengkap (KTP)</label>
-                        <Input
-                          placeholder="Nama lengkap..."
-                          value={regName}
-                          onChange={(e) => setRegName(e.target.value)}
-                          className="text-xs mt-1"
-                        />
-                      </div>
+
                       <div>
                         <label className="font-semibold text-gray-700">WhatsApp (08...)</label>
                         <Input
@@ -942,6 +977,7 @@ export default function App() {
                           className="text-xs mt-1 font-mono"
                         />
                       </div>
+
                       <div>
                         <label className="font-semibold text-gray-700">Email (Auto @gmail.com)</label>
                         <Input
@@ -951,22 +987,24 @@ export default function App() {
                           className="text-xs mt-1"
                         />
                       </div>
-                      <div className="sm:col-span-2">
-                        <label className="font-semibold text-gray-700">Alamat Domisili KTP</label>
-                        <Input
-                          placeholder="Alamat lengkap domisili..."
-                          value={regAddress}
-                          onChange={(e) => setRegAddress(e.target.value)}
-                          className="text-xs mt-1"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
+
+                      <div>
                         <label className="font-semibold text-gray-700">Password Akun (Min. 6 Karakter)</label>
                         <Input
                           type="password"
                           placeholder="Minimal 6 karakter..."
                           value={regPassword}
                           onChange={(e) => setRegPassword(e.target.value)}
+                          className="text-xs mt-1"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="font-semibold text-gray-700">Alamat Domisili KTP</label>
+                        <Input
+                          placeholder="Alamat lengkap domisili..."
+                          value={regAddress}
+                          onChange={(e) => setRegAddress(e.target.value)}
                           className="text-xs mt-1"
                         />
                       </div>
@@ -1089,7 +1127,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 7. CONTROL PANEL ADMIN LENGKAP (USER, PROPERTI & NOTA) */}
+            {/* 7. CONTROL PANEL ADMIN LENGKAP */}
             {currentPage === 'admin' && currentUser?.role === 'admin' && (
               <div className="space-y-4 sm:space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 bg-purple-50 border border-purple-200 p-3.5 sm:p-4 rounded-2xl">
@@ -1128,7 +1166,7 @@ export default function App() {
                       <table className="w-full text-xs text-left">
                         <thead className="bg-gray-100 text-gray-700 border-b">
                           <tr>
-                            <th className="p-3">Nama & NIK</th>
+                            <th className="p-3">User & NIK</th>
                             <th className="p-3">Kontak & Alamat</th>
                             <th className="p-3 text-center">Dokumen</th>
                             <th className="p-3 text-center">Status</th>
@@ -1147,7 +1185,8 @@ export default function App() {
                               <tr key={u.id} className="hover:bg-gray-50/80 transition">
                                 <td className="p-3">
                                   <p className="font-bold text-gray-900">{u.fullName}</p>
-                                  <p className="font-mono text-[10px] text-blue-600 font-semibold">NIK: {u.nik || '-'}</p>
+                                  <p className="text-[11px] text-purple-700 font-mono font-semibold">@{u.username || 'user'}</p>
+                                  <p className="font-mono text-[10px] text-blue-600">NIK: {u.nik || '-'}</p>
                                 </td>
                                 <td className="p-3">
                                   <p className="font-medium text-gray-800">{u.phone}</p>
@@ -1227,7 +1266,7 @@ export default function App() {
                   </Card>
                 )}
 
-                {/* TAB 2: KELOLA PROPERTI / DAFTAR RUMAH */}
+                {/* TAB 2: KELOLA PROPERTI */}
                 {adminTab === 'properties' && (
                   <Card className="border border-gray-200 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
@@ -1279,7 +1318,7 @@ export default function App() {
                   </Card>
                 )}
 
-                {/* TAB 3: KELOLA NOTA TRANSAKSI */}
+                {/* TAB 3: KELOLA NOTA */}
                 {adminTab === 'invoices' && (
                   <Card className="border border-gray-200 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
