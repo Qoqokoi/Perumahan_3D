@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
 import {
-  collection, onSnapshot, doc, setDoc, updateDoc, serverTimestamp
+  collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, serverTimestamp
 } from 'firebase/firestore';
 import { PropertyList } from './components/PropertyList';
 import { PropertyFilters } from './components/PropertyFilters';
@@ -10,7 +10,7 @@ import SalesInvoice from './components/SalesInvoice';
 import {
   Home, Search, FileText, User, LogIn,
   Video, Users, Building2, Phone, MessageCircle, Mail, MapPin,
-  CheckCircle, ShieldCheck, Camera, Upload, Image as ImageIcon, X, AlertCircle, Check, Ban
+  CheckCircle, ShieldCheck, Camera, Upload, Image as ImageIcon, X, AlertCircle, Check, Ban, Trash2, Plus
 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -64,7 +64,7 @@ export interface CurrentUserType {
 
 const mockProperties: Property[] = [
   {
-    id: '1',
+    id: 'PROP-01',
     title: 'Rumah Modern Fathur',
     price: 2500000000,
     location: 'Jakarta Selatan',
@@ -78,7 +78,7 @@ const mockProperties: Property[] = [
     yearBuilt: 2022
   },
   {
-    id: '2',
+    id: 'PROP-02',
     title: 'Rumah Tradisional Fathur',
     price: 5000000000,
     location: 'Bali',
@@ -92,7 +92,7 @@ const mockProperties: Property[] = [
     yearBuilt: 2021
   },
   {
-    id: '3',
+    id: 'PROP-03',
     title: 'Villa Impian Delons',
     price: 3500000000,
     location: 'Surabaya',
@@ -106,7 +106,7 @@ const mockProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '4',
+    id: 'PROP-04',
     title: 'Villa Impian Delons',
     price: 3500000000,
     location: 'Jember',
@@ -120,7 +120,7 @@ const mockProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '5',
+    id: 'PROP-05',
     title: 'Villa Impian Davi',
     price: 3500000000,
     location: 'Bandung',
@@ -134,7 +134,7 @@ const mockProperties: Property[] = [
     yearBuilt: 2024
   },
   {
-    id: '6',
+    id: 'PROP-06',
     title: 'Villa Impian Davi',
     price: 3500000000,
     location: 'Tasikmalaya',
@@ -160,6 +160,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUserType | null>(null);
   const [currentPage, setCurrentPage] = useState<'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services' | 'admin'>('home');
+  const [adminTab, setAdminTab] = useState<'users' | 'properties' | 'invoices'>('users');
 
   const [previewImageModal, setPreviewImageModal] = useState<{ title: string; src: string } | null>(null);
 
@@ -192,8 +193,20 @@ export default function App() {
   const ktpInputRef = useRef<HTMLInputElement>(null);
   const selfieInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. SINKRONISASI FIRESTORE
+  // 1. SINKRONISASI FIRESTORE (Realtime Properties, Users, Invoices)
   useEffect(() => {
+    const unsubProps = onSnapshot(collection(db, 'properties'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: Property[] = [];
+        snapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() } as Property));
+        setProperties(loaded);
+      } else {
+        mockProperties.forEach(async (p) => {
+          await setDoc(doc(db, 'properties', p.id), p);
+        });
+      }
+    });
+
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       const usersList: any[] = [];
       snapshot.forEach((d) => usersList.push({ id: d.id, ...d.data() }));
@@ -209,12 +222,44 @@ export default function App() {
     });
 
     return () => {
+      unsubProps();
       unsubUsers();
       unsubInvoices();
     };
   }, []);
 
-  // 2. LIVE CAMERA CONTROLS
+  // 2. PRIVACY FILTER NOTA
+  const visibleInvoices = currentUser?.role === 'admin'
+    ? transactions
+    : isLoggedIn && currentUser
+      ? transactions.filter((t: any) => {
+        const userEmail = currentUser.email?.toLowerCase();
+        const userNik = currentUser.nik;
+        const userName = currentUser.fullName?.toLowerCase();
+
+        const tEmail = (t.buyerEmail || t.buyer?.email || '').toLowerCase();
+        const tNik = t.buyerNik || t.buyer?.nik || '';
+        const tName = (t.buyerName || t.buyer?.name || '').toLowerCase();
+
+        return (userEmail && tEmail === userEmail) ||
+          (userNik && tNik === userNik) ||
+          (userName && tName === userName);
+      })
+      : [];
+
+  // 3. HELPER VERIFIKASI PASSWORD ADMIN (ADMIN PROTECTION)
+  const verifyAdminPassword = (actionName: string): boolean => {
+    const pass = window.prompt(`[OTORISASI ADMIN]\nMasukkan Password Admin untuk menghapus ${actionName}:`);
+    if (pass === 'admin123') {
+      return true;
+    }
+    if (pass !== null) {
+      alert('Akses Ditolak: Password Admin Salah!');
+    }
+    return false;
+  };
+
+  // 4. LIVE CAMERA CONTROLS
   const startCamera = async (target: 'ktp' | 'selfie') => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -270,7 +315,7 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // 3. REGISTRASI E-KYC (STATUS PENDING)
+  // 5. REGISTRASI E-KYC
   const handleRegisterSubmit = async () => {
     const cleanNik = regNik.replace(/\D/g, '').trim();
     const cleanName = regName.trim();
@@ -363,7 +408,7 @@ export default function App() {
     }
   };
 
-  // 4. AUTENTIKASI LOGIN
+  // 6. AUTENTIKASI LOGIN
   const handleLoginSubmit = () => {
     if (!loginEmail.trim() || !loginPassword.trim()) {
       alert('Silakan masukkan email/username dan password terlebih dahulu!');
@@ -433,17 +478,49 @@ export default function App() {
     alert(`Login Berhasil! Selamat datang, ${verifiedUser.fullName}.`);
   };
 
-  // 5. UPDATE STATUS ACC ADMIN
+  // 7. PENGHAPUSAN DENGAN PROTEKSI PASSWORD ADMIN
   const handleUpdateUserStatus = async (userId: string, newStatus: 'approved' | 'rejected') => {
     try {
       await updateDoc(doc(db, 'users', userId), { status: newStatus });
-      alert(`Akun berhasil ${newStatus === 'approved' ? 'DI-ACC (Disetujui)' : 'DITOLAK'}!`);
+      alert(`Akun berhasil ${newStatus === 'approved' ? 'DI-ACC (Disetujui)' : 'DIBLOKIR'}!`);
     } catch (e: any) {
       alert('Gagal update status: ' + e.message);
     }
   };
 
-  // 6. PEMBUATAN NOTA TRANSAKSI
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (!verifyAdminPassword(`Akun Pengguna "${userName}"`)) return;
+    try {
+      await deleteDoc(doc(db, 'users', userId));
+      alert(`Akun "${userName}" berhasil dihapus permanen dari Firestore.`);
+    } catch (e: any) {
+      alert('Gagal menghapus user: ' + e.message);
+    }
+  };
+
+  const handleDeleteProperty = async (propertyId: string, propertyTitle: string) => {
+    if (!verifyAdminPassword(`Unit Properti "${propertyTitle}"`)) return;
+    try {
+      await deleteDoc(doc(db, 'properties', propertyId));
+      setProperties((prev) => prev.filter((p) => p.id !== propertyId));
+      alert(`Unit properti "${propertyTitle}" berhasil dihapus dari katalog.`);
+    } catch (e: any) {
+      alert('Gagal menghapus properti: ' + e.message);
+    }
+  };
+
+  const handleDeleteInvoice = async (invoiceId: string) => {
+    if (!verifyAdminPassword(`Nota Transaksi [${invoiceId}]`)) return;
+    try {
+      await deleteDoc(doc(db, 'invoices', invoiceId));
+      setTransactions((prev) => prev.filter((t) => t.id !== invoiceId));
+      alert(`Nota transaksi "${invoiceId}" berhasil dihapus.`);
+    } catch (e: any) {
+      alert('Gagal menghapus nota: ' + e.message);
+    }
+  };
+
+  // 8. PEMBUATAN NOTA TRANSAKSI
   const handleCreateInvoice = async (property: Property, buyerData: any, paymentData: any) => {
     if (!isLoggedIn || !currentUser) {
       alert('Akses Ditolak: Anda wajib Login terlebih dahulu sebelum memesan properti!');
@@ -558,7 +635,7 @@ export default function App() {
                       : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
                     }`}
                 >
-                  <ShieldCheck className="size-3.5" /> ACC User ({pendingUsersCount})
+                  <ShieldCheck className="size-3.5" /> Admin Panel ({pendingUsersCount})
                 </button>
               )}
             </nav>
@@ -632,7 +709,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* MAIN BODY (RESPONSIVE DENGAN PADDING BAWAH PADA MOBILE) */}
+        {/* MAIN BODY */}
         <main className="p-3 sm:p-6 w-full max-w-7xl mx-auto flex-1 pb-24 md:pb-8">
           <div
             key={currentPage}
@@ -642,8 +719,6 @@ export default function App() {
             {/* 1. HOME */}
             {currentPage === 'home' && (
               <div className="space-y-6">
-
-                {/* Hero Banner Responsive */}
                 <div
                   className="relative rounded-2xl overflow-hidden text-white p-5 sm:p-8 md:p-10 shadow-lg bg-cover bg-center"
                   style={{
@@ -667,7 +742,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Filter & Property Grid Responsive */}
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
                   <div className="lg:col-span-1 w-full">
                     <PropertyFilters onFilterChange={filterProperties} />
@@ -823,7 +897,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 6. REGISTER (RESPONSIVE) */}
+            {/* 6. REGISTER */}
             {currentPage === 'register' && (
               <div className="max-w-xl mx-auto py-3 sm:py-6">
                 <Card className="shadow-lg border border-gray-200">
@@ -898,7 +972,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* DOKUMEN E-KYC: BISA PILIH KAMERA ATAU UPLOAD */}
                     <div className="space-y-2.5 pt-2 border-t border-gray-100">
                       <p className="text-xs font-bold text-gray-800">Lampiran Dokumen Identitas (Wajib)</p>
 
@@ -1016,115 +1089,263 @@ export default function App() {
               </div>
             )}
 
-            {/* 7. CONTROL PANEL ADMIN */}
+            {/* 7. CONTROL PANEL ADMIN LENGKAP (USER, PROPERTI & NOTA) */}
             {currentPage === 'admin' && currentUser?.role === 'admin' && (
               <div className="space-y-4 sm:space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 bg-purple-50 border border-purple-200 p-3.5 sm:p-4 rounded-2xl">
                   <div>
-                    <h2 className="text-base sm:text-lg font-bold text-purple-950">Control Panel Verifikasi Akun</h2>
-                    <p className="text-[11px] sm:text-xs text-purple-700">Tinjau foto KTP & wajah pendaftar untuk memberikan akses akun (ACC).</p>
+                    <h2 className="text-base sm:text-lg font-bold text-purple-950">Control Panel Manajemen Cloud</h2>
+                    <p className="text-[11px] sm:text-xs text-purple-700">Kelola Pengguna, Unit Rumah, dan Nota dengan Proteksi Password Admin.</p>
                   </div>
-                  <Badge className="bg-purple-700 text-white font-bold text-xs shrink-0">
-                    {pendingUsersCount} Menunggu ACC
-                  </Badge>
+
+                  {/* Tab Selector Admin */}
+                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-purple-200">
+                    <button
+                      onClick={() => setAdminTab('users')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${adminTab === 'users' ? 'bg-purple-700 text-white' : 'text-purple-700 hover:bg-purple-50'}`}
+                    >
+                      User ({registeredUsers.filter(u => u.role !== 'admin').length})
+                    </button>
+                    <button
+                      onClick={() => setAdminTab('properties')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${adminTab === 'properties' ? 'bg-purple-700 text-white' : 'text-purple-700 hover:bg-purple-50'}`}
+                    >
+                      Rumah ({properties.length})
+                    </button>
+                    <button
+                      onClick={() => setAdminTab('invoices')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${adminTab === 'invoices' ? 'bg-purple-700 text-white' : 'text-purple-700 hover:bg-purple-50'}`}
+                    >
+                      Nota ({transactions.length})
+                    </button>
+                  </div>
                 </div>
 
-                <Card className="border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-gray-100 text-gray-700 border-b">
-                        <tr>
-                          <th className="p-3">Nama & NIK</th>
-                          <th className="p-3">Kontak & Alamat</th>
-                          <th className="p-3 text-center">Dokumen</th>
-                          <th className="p-3 text-center">Status</th>
-                          <th className="p-3 text-right">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {registeredUsers.filter((u) => u.role !== 'admin').length === 0 ? (
+                {/* TAB 1: KELOLA PENGGUNA */}
+                {adminTab === 'users' && (
+                  <Card className="border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-gray-100 text-gray-700 border-b">
                           <tr>
-                            <td colSpan={5} className="p-6 text-center text-gray-400">
-                              Belum ada akun pendaftar di database.
-                            </td>
+                            <th className="p-3">Nama & NIK</th>
+                            <th className="p-3">Kontak & Alamat</th>
+                            <th className="p-3 text-center">Dokumen</th>
+                            <th className="p-3 text-center">Status</th>
+                            <th className="p-3 text-right">Aksi Admin (Pass Protect)</th>
                           </tr>
-                        ) : (
-                          registeredUsers.filter((u) => u.role !== 'admin').map((u) => (
-                            <tr key={u.id} className="hover:bg-gray-50/80 transition">
-                              <td className="p-3">
-                                <p className="font-bold text-gray-900">{u.fullName}</p>
-                                <p className="font-mono text-[10px] text-blue-600 font-semibold">NIK: {u.nik || '-'}</p>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {registeredUsers.filter((u) => u.role !== 'admin').length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-6 text-center text-gray-400">
+                                Belum ada akun pendaftar di database.
                               </td>
-                              <td className="p-3">
-                                <p className="font-medium text-gray-800">{u.phone}</p>
-                                <p className="text-[10px] text-gray-500">{u.email}</p>
-                              </td>
-                              <td className="p-3 text-center">
-                                <div className="flex justify-center items-center gap-1.5">
-                                  {u.ktpImage && (
-                                    <button
-                                      onClick={() => setPreviewImageModal({ title: `Foto KTP: ${u.fullName}`, src: u.ktpImage })}
-                                      className="px-1.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 rounded font-bold text-[10px]"
+                            </tr>
+                          ) : (
+                            registeredUsers.filter((u) => u.role !== 'admin').map((u) => (
+                              <tr key={u.id} className="hover:bg-gray-50/80 transition">
+                                <td className="p-3">
+                                  <p className="font-bold text-gray-900">{u.fullName}</p>
+                                  <p className="font-mono text-[10px] text-blue-600 font-semibold">NIK: {u.nik || '-'}</p>
+                                </td>
+                                <td className="p-3">
+                                  <p className="font-medium text-gray-800">{u.phone}</p>
+                                  <p className="text-[10px] text-gray-500">{u.email}</p>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <div className="flex justify-center items-center gap-1.5">
+                                    {u.ktpImage && (
+                                      <button
+                                        onClick={() => setPreviewImageModal({ title: `Foto KTP: ${u.fullName}`, src: u.ktpImage })}
+                                        className="px-1.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 rounded font-bold text-[10px]"
+                                      >
+                                        KTP
+                                      </button>
+                                    )}
+                                    {u.selfieImage && (
+                                      <button
+                                        onClick={() => setPreviewImageModal({ title: `Foto Wajah: ${u.fullName}`, src: u.selfieImage })}
+                                        className="px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded font-bold text-[10px]"
+                                      >
+                                        Wajah
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Badge
+                                    className={`text-[9px] font-bold ${u.status === 'approved'
+                                        ? 'bg-emerald-600 text-white'
+                                        : u.status === 'rejected'
+                                          ? 'bg-red-600 text-white'
+                                          : 'bg-amber-500 text-white'
+                                      }`}
+                                  >
+                                    {u.status === 'approved' ? 'DI-ACC' : u.status === 'rejected' ? 'DITOLAK' : 'PENDING'}
+                                  </Badge>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="flex justify-end items-center gap-1">
+                                    {u.status !== 'approved' && (
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleUpdateUserStatus(u.id, 'approved')}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-6 px-2 gap-0.5"
+                                      >
+                                        <Check className="size-2.5" /> ACC
+                                      </Button>
+                                    )}
+
+                                    {u.status === 'approved' && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleUpdateUserStatus(u.id, 'rejected')}
+                                        className="text-amber-600 border-amber-200 hover:bg-amber-50 text-[10px] h-6 px-1.5 gap-0.5"
+                                      >
+                                        <Ban className="size-2.5" /> Blokir
+                                      </Button>
+                                    )}
+
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleDeleteUser(u.id, u.fullName)}
+                                      className="text-red-600 border-red-200 hover:bg-red-50 text-[10px] h-6 px-1.5 gap-0.5"
                                     >
-                                      KTP
-                                    </button>
-                                  )}
-                                  {u.selfieImage && (
-                                    <button
-                                      onClick={() => setPreviewImageModal({ title: `Foto Wajah: ${u.fullName}`, src: u.selfieImage })}
-                                      className="px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded font-bold text-[10px]"
-                                    >
-                                      Wajah
-                                    </button>
-                                  )}
+                                      <Trash2 className="size-2.5" /> Hapus
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
+
+                {/* TAB 2: KELOLA PROPERTI / DAFTAR RUMAH */}
+                {adminTab === 'properties' && (
+                  <Card className="border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-gray-100 text-gray-700 border-b">
+                          <tr>
+                            <th className="p-3">Unit Properti</th>
+                            <th className="p-3">Lokasi & Tipe</th>
+                            <th className="p-3">Spesifikasi</th>
+                            <th className="p-3">Harga</th>
+                            <th className="p-3 text-right">Aksi (Pass Protect)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {properties.map((p) => (
+                            <tr key={p.id} className="hover:bg-gray-50/80 transition">
+                              <td className="p-3 flex items-center gap-2">
+                                <img src={p.image} alt={p.title} className="size-8 rounded object-cover border" />
+                                <div>
+                                  <p className="font-bold text-gray-900">{p.title}</p>
+                                  <p className="font-mono text-[10px] text-gray-400">{p.id}</p>
                                 </div>
                               </td>
-                              <td className="p-3 text-center">
-                                <Badge
-                                  className={`text-[9px] font-bold ${u.status === 'approved'
-                                      ? 'bg-emerald-600 text-white'
-                                      : u.status === 'rejected'
-                                        ? 'bg-red-600 text-white'
-                                        : 'bg-amber-500 text-white'
-                                    }`}
-                                >
-                                  {u.status === 'approved' ? 'DI-ACC' : u.status === 'rejected' ? 'DITOLAK' : 'PENDING'}
-                                </Badge>
+                              <td className="p-3">
+                                <p className="font-medium text-gray-800">{p.location}</p>
+                                <p className="text-[10px] text-blue-600 uppercase font-semibold">{p.type}</p>
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {p.bedrooms} KT • {p.bathrooms} KM • {p.area} m²
+                              </td>
+                              <td className="p-3 font-bold text-blue-600">
+                                Rp {p.price.toLocaleString('id-ID')}
                               </td>
                               <td className="p-3 text-right">
-                                <div className="flex justify-end gap-1">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleUpdateUserStatus(u.id, 'approved')}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] h-6 px-2 gap-0.5"
-                                  >
-                                    <Check className="size-2.5" /> ACC
-                                  </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleDeleteProperty(p.id, p.title)}
+                                  className="text-red-600 border-red-200 hover:bg-red-50 text-[10px] h-7 px-2.5 gap-1"
+                                >
+                                  <Trash2 className="size-3" /> Hapus Properti
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
+
+                {/* TAB 3: KELOLA NOTA TRANSAKSI */}
+                {adminTab === 'invoices' && (
+                  <Card className="border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-gray-100 text-gray-700 border-b">
+                          <tr>
+                            <th className="p-3">ID Nota & Tanggal</th>
+                            <th className="p-3">Pembeli</th>
+                            <th className="p-3">Unit Properti</th>
+                            <th className="p-3">DP Terbayar</th>
+                            <th className="p-3 text-right">Aksi (Pass Protect)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {transactions.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-6 text-center text-gray-400">
+                                Belum ada riwayat nota transaksi.
+                              </td>
+                            </tr>
+                          ) : (
+                            transactions.map((t: any) => (
+                              <tr key={t.id} className="hover:bg-gray-50/80 transition">
+                                <td className="p-3">
+                                  <p className="font-mono font-bold text-blue-600">{t.id}</p>
+                                  <p className="text-[10px] text-gray-400">{new Date(t.date || t.createdAt).toLocaleDateString('id-ID')}</p>
+                                </td>
+                                <td className="p-3">
+                                  <p className="font-bold text-gray-900">{t.buyerName || t.buyer?.name}</p>
+                                  <p className="text-[10px] text-gray-500">{t.buyerPhone || t.buyer?.phone}</p>
+                                </td>
+                                <td className="p-3">
+                                  <p className="font-medium text-gray-800">{t.propertyTitle || t.property?.title}</p>
+                                </td>
+                                <td className="p-3 font-bold text-emerald-600">
+                                  Rp {Number(t.downPayment || t.payment?.downPayment || 0).toLocaleString('id-ID')}
+                                </td>
+                                <td className="p-3 text-right">
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={() => handleUpdateUserStatus(u.id, 'rejected')}
-                                    className="text-red-600 border-red-200 hover:bg-red-50 text-[10px] h-6 px-1.5"
+                                    onClick={() => handleDeleteInvoice(t.id)}
+                                    className="text-red-600 border-red-200 hover:bg-red-50 text-[10px] h-7 px-2.5 gap-1"
                                   >
-                                    <Ban className="size-2.5" />
+                                    <Trash2 className="size-3" /> Hapus Nota
                                   </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
+
               </div>
             )}
 
             {/* 8. INVOICE */}
             {currentPage === 'invoice' && (
               <SalesInvoice
-                invoices={transactions as any}
+                invoices={visibleInvoices as any}
                 onBack={() => setCurrentPage('home')}
+                isAdmin={currentUser?.role === 'admin'}
+                onDeleteInvoice={handleDeleteInvoice}
               />
             )}
           </div>
@@ -1215,7 +1436,7 @@ export default function App() {
             {currentUser?.role === 'admin' && (
               <button onClick={() => setCurrentPage('admin')} className={`flex flex-col items-center gap-0.5 ${currentPage === 'admin' ? 'text-purple-600 font-bold' : 'text-gray-500'}`}>
                 <ShieldCheck className="size-4" />
-                <span className="text-[10px]">ACC ({pendingUsersCount})</span>
+                <span className="text-[10px]">Admin</span>
               </button>
             )}
           </nav>
