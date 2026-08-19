@@ -158,8 +158,20 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([]);
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<CurrentUserType | null>(null);
+  // 1. STATE DENGAN PERSISTENSI LOCALSTORAGE (ANTI-LOGOUT SAAT REFRESH)
+  const [currentUser, setCurrentUser] = useState<CurrentUserType | null>(() => {
+    try {
+      const savedUser = localStorage.getItem('delons_auth_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return Boolean(localStorage.getItem('delons_auth_user'));
+  });
+
   const [currentPage, setCurrentPage] = useState<'home' | 'invoice' | 'login' | 'register' | 'video' | 'about' | 'services' | 'admin'>('home');
   const [adminTab, setAdminTab] = useState<'users' | 'properties' | 'invoices'>('users');
 
@@ -182,7 +194,7 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // Register Form States (Termasuk Username Input)
+  // Register Form States
   const [regUsername, setRegUsername] = useState('');
   const [regName, setRegName] = useState('');
   const [regNik, setRegNik] = useState('');
@@ -196,7 +208,7 @@ export default function App() {
   const ktpInputRef = useRef<HTMLInputElement>(null);
   const selfieInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. SINKRONISASI FIRESTORE
+  // 2. SINKRONISASI FIRESTORE
   useEffect(() => {
     const unsubProps = onSnapshot(collection(db, 'properties'), (snapshot) => {
       if (!snapshot.empty) {
@@ -231,7 +243,7 @@ export default function App() {
     };
   }, []);
 
-  // 2. PRIVACY FILTER NOTA
+  // 3. PRIVACY FILTER NOTA
   const visibleInvoices = currentUser?.role === 'admin'
     ? transactions
     : isLoggedIn && currentUser
@@ -250,7 +262,7 @@ export default function App() {
       })
       : [];
 
-  // 3. HELPER VERIFIKASI PASSWORD ADMIN
+  // 4. HELPER VERIFIKASI PASSWORD ADMIN
   const verifyAdminPassword = (actionName: string): boolean => {
     const pass = window.prompt(`[OTORISASI ADMIN]\nMasukkan Password Admin untuk menghapus ${actionName}:`);
     if (pass === 'admin123') {
@@ -262,7 +274,7 @@ export default function App() {
     return false;
   };
 
-  // 4. LIVE CAMERA CONTROLS
+  // 5. LIVE CAMERA CONTROLS
   const startCamera = async (target: 'ktp' | 'selfie') => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -318,7 +330,7 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // 5. REGISTRASI E-KYC DENGAN USERNAME
+  // 6. REGISTRASI E-KYC
   const handleRegisterSubmit = async () => {
     const cleanUsername = regUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
     const cleanNik = regNik.replace(/\D/g, '').trim();
@@ -365,16 +377,15 @@ export default function App() {
 
     const finalEmail = cleanEmailInput.includes('@') ? cleanEmailInput : `${cleanEmailInput}@gmail.com`;
 
-    // Validasi duplikasi username, email, dan NIK
     const isUsernameExist = registeredUsers.some(u => u.username?.toLowerCase() === cleanUsername);
     if (isUsernameExist) {
-      alert(`Gagal: Username "${cleanUsername}" sudah digunakan orang lain. Silakan pilih username lain!`);
+      alert(`Gagal: Username "${cleanUsername}" sudah digunakan orang lain. Pilih username lain!`);
       return;
     }
 
     const isEmailExist = registeredUsers.some(u => u.email?.toLowerCase() === finalEmail);
     if (isEmailExist) {
-      alert(`Gagal: Email "${finalEmail}" sudah terdaftar. Silakan gunakan email lain atau langsung Login!`);
+      alert(`Gagal: Email "${finalEmail}" sudah terdaftar.`);
       return;
     }
 
@@ -424,7 +435,7 @@ export default function App() {
     }
   };
 
-  // 6. AUTENTIKASI LOGIN (BISA PAKAI USERNAME ATAU EMAIL)
+  // 7. AUTENTIKASI LOGIN (SIMPAN KE LOCALSTORAGE)
   const handleLoginSubmit = () => {
     if (!loginEmail.trim() || !loginPassword.trim()) {
       alert('Silakan masukkan email/username dan password terlebih dahulu!');
@@ -445,6 +456,9 @@ export default function App() {
         role: 'admin',
         status: 'approved'
       };
+
+      // Simpan Sesi Admin
+      localStorage.setItem('delons_auth_user', JSON.stringify(adminData));
       setCurrentUser(adminData);
       setIsLoggedIn(true);
       setCurrentPage('admin');
@@ -454,7 +468,6 @@ export default function App() {
 
     const formattedEmail = inputId.includes('@') ? inputId : `${inputId}@gmail.com`;
 
-    // Pencocokan akun via username atau email
     const matchedUser = registeredUsers.find(
       (u) =>
         (u.username?.toLowerCase() === inputId ||
@@ -491,13 +504,24 @@ export default function App() {
       selfieImage: matchedUser.selfieImage
     };
 
+    // Simpan Sesi User ke LocalStorage
+    localStorage.setItem('delons_auth_user', JSON.stringify(verifiedUser));
     setCurrentUser(verifiedUser);
     setIsLoggedIn(true);
     setCurrentPage('home');
-    alert(`Login Berhasil! Selamat datang, ${verifiedUser.fullName} (@${verifiedUser.username}).`);
+    alert(`Login Berhasil! Selamat datang, ${verifiedUser.fullName}.`);
   };
 
-  // 7. PENGHAPUSAN DENGAN PASSWORD ADMIN
+  // 8. LOGOUT (HAPUS DARI LOCALSTORAGE)
+  const handleLogout = () => {
+    localStorage.removeItem('delons_auth_user');
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setCurrentPage('home');
+    alert('Anda telah berhasil Logout.');
+  };
+
+  // 9. UPDATE STATUS & HAPUS
   const handleUpdateUserStatus = async (userId: string, newStatus: 'approved' | 'rejected') => {
     try {
       await updateDoc(doc(db, 'users', userId), { status: newStatus });
@@ -539,7 +563,7 @@ export default function App() {
     }
   };
 
-  // 8. PEMBUATAN NOTA TRANSAKSI
+  // 10. PEMBUATAN NOTA TRANSAKSI
   const handleCreateInvoice = async (property: Property, buyerData: any, paymentData: any) => {
     if (!isLoggedIn || !currentUser) {
       alert('Akses Ditolak: Anda wajib Login terlebih dahulu sebelum memesan properti!');
@@ -686,12 +710,7 @@ export default function App() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => {
-                      setIsLoggedIn(false);
-                      setCurrentUser(null);
-                      setCurrentPage('home');
-                      alert('Anda telah berhasil Logout.');
-                    }}
+                    onClick={handleLogout}
                     className="text-xs text-red-600 border-red-200 hover:bg-red-50 h-8 sm:h-9 px-2 sm:px-3"
                   >
                     <LogIn className="size-3 sm:mr-1 rotate-180" /> <span className="hidden sm:inline">Logout</span>
@@ -916,7 +935,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 6. REGISTER (DENGAN INPUT USERNAME KHUSUS) */}
+            {/* 6. REGISTER */}
             {currentPage === 'register' && (
               <div className="max-w-xl mx-auto py-3 sm:py-6">
                 <Card className="shadow-lg border border-gray-200">
