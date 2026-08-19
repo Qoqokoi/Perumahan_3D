@@ -883,7 +883,7 @@ export default function App() {
                     },
                     {
                       name: 'Naufal Aqila',
-                      nim: '442024611048',
+                      nim: '452024611048',
                       role: '3D Architecture & Lumion Specialist',
                       desc: 'Merancang pemodelan spasial fasad 3D presisi tinggi serta memproduksi animasi walkthrough rendering visual Lumion.',
                       img: '/images/pp-delon.jpg'
