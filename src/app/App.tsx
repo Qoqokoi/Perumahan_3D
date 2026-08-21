@@ -849,21 +849,20 @@ export default function App() {
             {currentPage === 'video' && (
               <div className="space-y-6 text-center">
                 <div className="space-y-1.5">
-                  <h2 className="text-xl sm:text-2xl font-bold">Video Walkthrough Lumion 3D</h2>
-                  <p className="text-xs sm:text-sm text-gray-600">Video hasil rendering animasi 3D perumahan kelompok kami.</p>
+                  <h2 className="text-xl sm:text-2xl font-bold">Video Walkthrough 3D Modeling</h2>
+                  <p className="text-xs sm:text-sm text-gray-600">Video hasil rendering animasi 3D perumahan Delons Clusters.</p>
                 </div>
                 <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-lg flex items-center justify-center relative max-w-4xl mx-auto w-full">
                   <iframe
                     className="w-full h-full"
-                    src="https://www.youtube.com/embed/ng_r31w8AuQ?si=kEFJEdsp4sDV86zm"
-                    title="Video Lumion 3D"
+                    src="https://www.youtube.com/embed/1tsTREiafRw"
+                    title="Video 3D Modeling perumahan Delons Clusters"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                   ></iframe>
                 </div>
               </div>
             )}
-
             {/* 4. ABOUT */}
             {currentPage === 'about' && (
               <div className="space-y-6">
